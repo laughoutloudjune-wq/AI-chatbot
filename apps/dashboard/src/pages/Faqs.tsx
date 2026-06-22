@@ -14,8 +14,11 @@ export default function FaqsPage() {
     topic: '',
     question: '',
     answer: '',
-    is_active: true
+    is_active: true,
+    image_urls: [] as string[]
   });
+
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
     fetchFaqs();
@@ -45,12 +48,13 @@ export default function FaqsPage() {
         topic: faq.topic,
         question: faq.question,
         answer: faq.answer,
-        is_active: faq.is_active
+        is_active: faq.is_active,
+        image_urls: faq.image_urls || []
       });
     } else {
       setEditingId(null);
       setFormData({
-        topic: '', question: '', answer: '', is_active: true
+        topic: '', question: '', answer: '', is_active: true, image_urls: []
       });
     }
     setIsModalOpen(true);
@@ -75,6 +79,40 @@ export default function FaqsPage() {
       fetchFaqs();
     } catch (err: any) {
       alert('Error saving data: ' + err.message);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files);
+    
+    try {
+      setUploadingImage(true);
+      const newUrls: string[] = [];
+
+      for (const file of files) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('clinic_images')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data } = supabase.storage
+          .from('clinic_images')
+          .getPublicUrl(filePath);
+
+        newUrls.push(data.publicUrl);
+      }
+
+      setFormData({ ...formData, image_urls: [...formData.image_urls, ...newUrls] });
+    } catch (err: any) {
+      alert('Error uploading image: ' + err.message);
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -120,6 +158,11 @@ export default function FaqsPage() {
                       <div style={{ maxHeight: '60px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                         {f.answer}
                       </div>
+                      {f.image_urls && f.image_urls.length > 0 && (
+                        <div style={{ fontSize: '12px', color: 'var(--primary-dark)', marginTop: '4px' }}>
+                          {f.image_urls.length} Attached Image(s)
+                        </div>
+                      )}
                     </td>
                     <td>
                       <span className={`status-badge ${f.is_active ? 'status-active' : 'status-inactive'}`}>
@@ -165,6 +208,23 @@ export default function FaqsPage() {
               <div className="form-group">
                 <label className="form-label">Answer</label>
                 <textarea required className="form-input" value={formData.answer} onChange={e => setFormData({...formData, answer: e.target.value})} placeholder="Full answer for the bot to read..." style={{ minHeight: '150px' }} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Images (Optional)</label>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <input type="file" multiple accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} />
+                  {uploadingImage && <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Uploading...</span>}
+                </div>
+                {formData.image_urls && formData.image_urls.length > 0 && (
+                  <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {formData.image_urls.map((url, idx) => (
+                      <div key={idx} style={{ position: 'relative' }}>
+                        <img src={url} alt={`FAQ Preview ${idx}`} style={{ height: '80px', width: '80px', borderRadius: '4px', objectFit: 'cover' }} />
+                        <button type="button" onClick={() => setFormData({...formData, image_urls: formData.image_urls.filter((_, i) => i !== idx)})} style={{ position: 'absolute', top: '-8px', right: '-8px', background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -46,7 +46,13 @@ async function getKnowledgeBaseContext(): Promise<string> {
     
     if (faqs && faqs.length > 0) {
       faqs.forEach((f: any) => {
-        contextStr += `Q: ${f.question}\nA: ${f.answer}\n\n`;
+        let line = `Q: ${f.question}\nA: ${f.answer}\n`;
+        if (f.image_urls && Array.isArray(f.image_urls)) {
+          f.image_urls.forEach((url: string) => {
+            line += `รูปภาพแนบ: [IMAGE: ${url}]\n`;
+          });
+        }
+        contextStr += line + '\n';
       });
     } else {
       contextStr += 'ไม่มีข้อมูล FAQs\n';

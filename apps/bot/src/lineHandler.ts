@@ -128,23 +128,34 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
 
   // Parse [IMAGE: url] จากคำตอบของ AI
   const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
-  let imageUrl: string | null = null;
   const matches = [...replyText.matchAll(imageRegex)];
-  if (matches.length > 0) {
-    imageUrl = matches[0][1];
+  const imageUrls: string[] = [];
+  
+  for (const match of matches) {
+    if (imageUrls.length < 4) { // LINE allows max 5 bubbles per reply (1 text + up to 4 images)
+      imageUrls.push(match[1]);
+    }
   }
   const cleanReplyText = replyText.replace(imageRegex, '').trim();
+
+  // Detect if AI decided to handoff
+  if (cleanReplyText.includes('แอดมินรับทราบค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้เจ้าหน้าที่ฝ่ายที่เกี่ยวข้องมาดูแลต่อนะคะ')) {
+    const customerName = await getCustomerName(userId);
+    await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
+  }
 
   // 5. Reply กลับหา user ด้วย LINE reply token
   try {
     console.log(`[LINE] Sending reply to user...`);
     const messagesToSend: any[] = [{ type: 'text', text: cleanReplyText }];
     
-    if (imageUrl) {
-      messagesToSend.push({
-        type: 'image',
-        originalContentUrl: imageUrl,
-        previewImageUrl: imageUrl
+    if (imageUrls.length > 0) {
+      imageUrls.forEach(url => {
+        messagesToSend.push({
+          type: 'image',
+          originalContentUrl: url,
+          previewImageUrl: url
+        });
       });
     }
 
