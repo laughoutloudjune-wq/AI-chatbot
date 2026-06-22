@@ -1,10 +1,39 @@
 import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Stethoscope, HelpCircle, Activity, Settings as SettingsIcon } from 'lucide-react';
+import { Stethoscope, HelpCircle, Activity, Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { supabase } from './supabase';
 import ServicesPage from './pages/Services';
 import FaqsPage from './pages/Faqs';
 import SettingsPage from './pages/Settings';
+import Login from './pages/Login';
 
 function App() {
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'var(--primary-dark)' }}>Loading...</div>;
+  }
+
+  if (!session) {
+    return <Login />;
+  }
+
   return (
     <Router>
       <div className="app-container">
@@ -36,6 +65,16 @@ function App() {
               System Settings
             </NavLink>
           </nav>
+          
+          <div style={{ padding: '24px', marginTop: 'auto' }}>
+            <button 
+              className="btn btn-outline" 
+              style={{ width: '100%', borderColor: '#fca5a5', color: '#ef4444' }}
+              onClick={() => supabase.auth.signOut()}
+            >
+              <LogOut size={18} /> Sign Out
+            </button>
+          </div>
         </aside>
 
         <main className="main-content">
