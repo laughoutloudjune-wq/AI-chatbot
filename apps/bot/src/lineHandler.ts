@@ -136,10 +136,16 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
       imageUrls.push(match[1]);
     }
   }
-  const cleanReplyText = replyText.replace(imageRegex, '').trim();
+  let cleanReplyText = replyText.replace(imageRegex, '').trim();
+  let isHandoff = false;
 
   // Detect if AI decided to handoff
-  if (cleanReplyText.includes('แอดมินรับทราบค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้เจ้าหน้าที่ฝ่ายที่เกี่ยวข้องมาดูแลต่อนะคะ')) {
+  if (cleanReplyText.includes('[HANDOFF]')) {
+    isHandoff = true;
+    cleanReplyText = cleanReplyText.replace(/\[HANDOFF\]/g, '').trim();
+  }
+
+  if (isHandoff) {
     const customerName = await getCustomerName(userId);
     await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
   }
