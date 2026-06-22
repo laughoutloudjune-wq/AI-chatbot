@@ -1,0 +1,206 @@
+import { Request, Response } from 'express';
+import { supabaseAdmin, getSystemSetting } from './supabase';
+import { getReplyFromClaude } from './aiService';
+import { notifyAdmin } from './lineHandler';
+
+export async function handleFbVerify(req: Request, res: Response) {
+  const verify_token = await getSystemSetting<string>('fb_verify_token', process.env.FB_VERIFY_TOKEN || '');
+  
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  
+  if (mode && token) {
+    if (mode === 'subscribe' && token === verify_token) {
+      console.log('[FB] Webhook verified');
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  } else {
+    res.sendStatus(400);
+  }
+}
+
+export async function sendFbMessage(senderId: string, text: string, imageUrl?: string) {
+  const PAGE_ACCESS_TOKEN = await getSystemSetting<string>('fb_page_access_token', process.env.FB_PAGE_ACCESS_TOKEN || '');
+  if (!PAGE_ACCESS_TOKEN) {
+    console.error('[FB] Missing FB_PAGE_ACCESS_TOKEN');
+    return;
+  }
+
+  const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
+  
+  // Send text message if text is not empty
+  if (text) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: { id: senderId },
+          message: { text }
+        })
+      });
+      
+      if (!response.ok) {
+        const errBody = await response.text();
+        console.error('[FB] Error sending text message:', errBody);
+      }
+    } catch (err) {
+      console.error('[FB] Fetch error (text):', err);
+    }
+  }
+
+  // Send image message if imageUrl is provided
+  if (imageUrl) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: { id: senderId },
+          message: {
+            attachment: {
+              type: 'image',
+              payload: {
+                url: imageUrl,
+                is_reusable: true
+              }
+            }
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        const errBody = await response.text();
+        console.error('[FB] Error sending image message:', errBody);
+      }
+    } catch (err) {
+      console.error('[FB] Fetch error (image):', err);
+    }
+  }
+}
+
+async function getFbCustomerName(senderId: string): Promise<string> {
+  const PAGE_ACCESS_TOKEN = await getSystemSetting<string>('fb_page_access_token', process.env.FB_PAGE_ACCESS_TOKEN || '');
+  if (!PAGE_ACCESS_TOKEN) return 'ไม่ทราบชื่อ (Facebook User)';
+
+  const url = `https://graph.facebook.com/v19.0/${senderId}?fields=first_name,last_name&access_token=${PAGE_ACCESS_TOKEN}`;
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      return `${data.first_name} ${data.last_name}`;
+    }
+    return `Facebook User: ${senderId}`;
+  } catch (err) {
+    console.error('[FB] Error fetching customer name:', err);
+    return `Facebook User: ${senderId}`;
+  }
+}
+
+export async function handleFbEvent(req: Request, res: Response) {
+  const body = req.body;
+  
+  if (body.object !== 'page') {
+    res.sendStatus(404);
+    return;
+  }
+  
+  // Return a '200 OK' response to all events
+  res.status(200).send('EVENT_RECEIVED');
+
+  body.entry.forEach(async (entry: any) => {
+    // There can be multiple messaging objects
+    const messagingEvents = entry.messaging || [];
+    
+    messagingEvents.forEach(async (webhook_event: any) => {
+      const senderId = webhook_event.sender?.id;
+      if (!senderId) return;
+
+      if (webhook_event.message) {
+        const userMessage = webhook_event.message.text;
+
+        // Handle Echo (if we want to implement continuous learning later, it would be here: is_echo === true)
+        if (webhook_event.message.is_echo) {
+           // Future: Process admin responses for self-learning
+           return;
+        }
+        
+        // If no text, ignore for now (or handle images)
+        if (!userMessage) {
+          if (webhook_event.message.attachments) {
+             await sendFbMessage(senderId, 'แอดมินได้รับรูปแล้วค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้คุณหมอประเมินให้นะคะ 🙏🏻');
+             const customerName = await getFbCustomerName(senderId);
+             await notifyAdmin('ลูกค้าส่งรูปภาพ (Facebook)', `ชื่อลูกค้า: ${customerName}\nFacebook Sender ID: ${senderId}`);
+          }
+          return;
+        }
+        
+        // 1. Keyword-based Handoff
+        const defaultKeywords = ['รีวิว', 'influencer', 'ร่วมงาน', 'ติดต่อเรื่อง', 'marketing', 'อยู่ไกล', 'แพงไป', 'แพงจัง', 'คุยกับคน', 'ขอสายแอดมิน'];
+        const handoffKeywords = await getSystemSetting<string[]>('handoff_keywords', defaultKeywords);
+        const shouldHandoff = handoffKeywords.some(kw => userMessage.toLowerCase().includes(kw));
+
+        if (shouldHandoff) {
+          await sendFbMessage(senderId, 'แอดมินรับทราบค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้เจ้าหน้าที่ฝ่ายที่เกี่ยวข้องมาดูแลต่อนะคะ 🙏🏻');
+          const customerName = await getFbCustomerName(senderId);
+          await notifyAdmin('พบข้อความที่ต้องโอนสาย (Facebook)', `ชื่อลูกค้า: ${customerName}\nข้อความ: "${userMessage}"`);
+          return;
+        }
+        
+        // 2. Chat History handling
+        const fbUserId = `fb_${senderId}`; // prefix to avoid collision with LINE IDs
+        let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
+        
+        try {
+          const { data } = await supabaseAdmin.from('chat_sessions').select('history').eq('user_id', fbUserId).single();
+          if (data && data.history) {
+            chatHistory = data.history;
+          }
+        } catch (err) {
+          console.error('[FB] Error fetching chat session:', err);
+        }
+
+        chatHistory.push({ role: 'user', content: userMessage });
+
+        if (chatHistory.length > 10) {
+          chatHistory = chatHistory.slice(chatHistory.length - 10);
+        }
+
+        console.log(`[FB] Received text message: "${userMessage}"`);
+
+        // 3. AI Reply
+        const replyText = await getReplyFromClaude(chatHistory);
+
+        chatHistory.push({ role: 'assistant', content: replyText });
+
+        // 4. Save Session
+        try {
+          await supabaseAdmin.from('chat_sessions').upsert({
+            user_id: fbUserId,
+            last_message: userMessage,
+            history: chatHistory,
+            last_interaction_at: new Date().toISOString(),
+            follow_up_sent: false
+          });
+        } catch (err) {
+          console.error('[FB] Error saving chat session:', err);
+        }
+        
+        // 5. Image Parsing & Reply
+        const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
+        let imageUrl: string | undefined = undefined;
+        const matches = [...replyText.matchAll(imageRegex)];
+        if (matches.length > 0) {
+          imageUrl = matches[0][1];
+        }
+        
+        const cleanReplyText = replyText.replace(imageRegex, '').trim();
+        
+        await sendFbMessage(senderId, cleanReplyText, imageUrl);
+      }
+    });
+  });
+}
