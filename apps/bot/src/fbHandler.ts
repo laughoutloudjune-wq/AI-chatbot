@@ -197,7 +197,19 @@ export async function handleFbEvent(req: Request, res: Response) {
           imageUrl = matches[0][1];
         }
         
-        const cleanReplyText = replyText.replace(imageRegex, '').trim();
+        let cleanReplyText = replyText.replace(imageRegex, '').trim();
+        let isHandoff = false;
+
+        // Detect if AI decided to handoff
+        if (cleanReplyText.toUpperCase().includes('[HANDOFF]')) {
+          isHandoff = true;
+          cleanReplyText = cleanReplyText.replace(/\[HANDOFF\]/gi, '').trim();
+        }
+
+        if (isHandoff) {
+          const customerName = await getFbCustomerName(senderId);
+          await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ช่องทาง: Facebook\nชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
+        }
         
         await sendFbMessage(senderId, cleanReplyText, imageUrl);
       }

@@ -140,9 +140,9 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   let isHandoff = false;
 
   // Detect if AI decided to handoff
-  if (cleanReplyText.includes('[HANDOFF]')) {
+  if (cleanReplyText.toUpperCase().includes('[HANDOFF]')) {
     isHandoff = true;
-    cleanReplyText = cleanReplyText.replace(/\[HANDOFF\]/g, '').trim();
+    cleanReplyText = cleanReplyText.replace(/\[HANDOFF\]/gi, '').trim();
   }
 
   if (isHandoff) {
