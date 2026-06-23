@@ -20,6 +20,7 @@ export default function SettingsPage() {
   const [fbAccessToken, setFbAccessToken] = useState('');
   const [fbVerifyToken, setFbVerifyToken] = useState('');
   const [handoffKeywords, setHandoffKeywords] = useState<string[]>([]);
+  const [systemPrompt, setSystemPrompt] = useState('');
 
   useEffect(() => {
     fetchSettings();
@@ -43,6 +44,7 @@ export default function SettingsPage() {
       setFbAccessToken(settingsMap['fb_page_access_token']?.value || '');
       setFbVerifyToken(settingsMap['fb_verify_token']?.value || '');
       setHandoffKeywords(settingsMap['handoff_keywords']?.value || []);
+      setSystemPrompt(settingsMap['system_prompt']?.value || '');
       
     } catch (err) {
       console.error('Error fetching settings:', err);
@@ -119,6 +121,33 @@ export default function SettingsPage() {
                 className="btn-secondary" 
                 onClick={() => handleSave('clinic_name', clinicName)}
                 disabled={saving || clinicName === settings['clinic_name']?.value}
+              >
+                <Save size={16} /> Save
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* AI System Prompt */}
+        <section className="settings-card" style={{ gridColumn: '1 / -1' }}>
+          <h2>AI System Prompt (Brain Instructions)</h2>
+          <div className="form-group">
+            <p className="help-text">
+              {settings['system_prompt']?.description || 'Edit the core instructions for the AI bot. Use {{clinic_name}} as a placeholder.'}
+            </p>
+            <div className="input-with-action" style={{ alignItems: 'flex-start' }}>
+              <textarea 
+                className="form-textarea"
+                rows={15}
+                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontFamily: 'monospace', resize: 'vertical' }}
+                value={systemPrompt} 
+                onChange={e => setSystemPrompt(e.target.value)}
+              />
+              <button 
+                className="btn-secondary" 
+                style={{ marginTop: '0', flexShrink: 0 }}
+                onClick={() => handleSave('system_prompt', systemPrompt)}
+                disabled={saving || systemPrompt === settings['system_prompt']?.value}
               >
                 <Save size={16} /> Save
               </button>

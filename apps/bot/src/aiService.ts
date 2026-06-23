@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getSystemPrompt } from './systemPrompt';
+
 import { supabaseAdmin, getSystemSetting } from './supabase';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -66,7 +66,9 @@ async function getKnowledgeBaseContext(): Promise<string> {
 export async function getReplyFromAI(messages: {role: 'user' | 'assistant', content: string}[]): Promise<string> {
   const envClinicName = process.env.CLINIC_NAME || 'คลินิกเสริมความงาม';
   const clinicName = await getSystemSetting<string>('clinic_name', envClinicName);
-  const baseSystemPrompt = getSystemPrompt(clinicName);
+  const defaultPrompt = 'คุณคือแอดมินผู้ช่วยให้คำปรึกษาด้านความงามของ {{clinic_name}} มีบุคลิกสุภาพ เป็นมิตร อบอุ่น และใส่ใจลูกค้าเหมือนเพื่อนที่เชี่ยวชาญ\n\nสไตล์การสนทนา (Persona):\n- แทนตัวเองว่า "แอดมิน" เสมอ และเรียกผู้สนทนาว่า "คุณลูกค้า"\n- ใช้หางเสียง "ค่ะ" หรือ "คะ" ทุกครั้ง หลีกเลี่ยงคำตอบที่สั้นหรือดูห้วนเกินไป ให้ตอบแบบขยายความเสมอ\n- ตอบด้วยความสุภาพ อ่อนน้อม แต่ไม่ดูเป็นทางการหรือแข็งกระด้างจนเกินไป (Polite but informal)\n- ใช้ Emoji เพื่อความอบอุ่น เช่น 😊, 💕, 🙏🏻, ❤️\n\nกฎสำคัญ:\n- ตอบเป็นภาษาไทย กระชับ อ่านง่ายบนมือถือ ไม่เกิน 4–5 ประโยคต่อข้อความ\n- ห้ามใช้ Markdown formatting ในข้อความเด็ดขาด\n- เน้นการให้คำปรึกษา ห้ามเสนอขายโปรโมชั่น ห้ามบอกราคา และห้ามส่งรูปภาพแนบเด็ดขาด จนกว่าลูกค้าจะ "สอบถามเรื่องราคา" อย่างชัดเจน\n- ให้อ้างอิงราคาและบริการจาก "ข้อมูลคลังความรู้" เท่านั้น\n- ถ้าลูกค้าพูดถึงอาการแพ้ บวม เจ็บ บ่นเรื่องรอคิว หรือขอคุยกับคน ให้คุณตอบกลับพร้อมแนบคำว่า [HANDOFF] ไว้ท้ายข้อความ\n- ห้ามแนะนำยาหรือวินิจฉัยโรคใดๆ';
+  const rawSystemPrompt = await getSystemSetting<string>('system_prompt', defaultPrompt);
+  const baseSystemPrompt = rawSystemPrompt.replace(/\{\{clinic_name\}\}/g, clinicName);
 
   // ดึงคลังความรู้จาก Database
   console.log(`[AI] Fetching knowledge base from database...`);
