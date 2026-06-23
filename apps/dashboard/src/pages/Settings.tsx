@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
-import { Settings as SettingsIcon, Save, Plus, X } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Plus, X, Loader2 } from 'lucide-react';
 
 interface SystemSetting {
   key: string;
@@ -11,7 +11,7 @@ interface SystemSetting {
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, SystemSetting>>({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
   const [newKeyword, setNewKeyword] = useState('');
 
   // Form states
@@ -55,7 +55,7 @@ export default function SettingsPage() {
   };
 
   const handleSave = async (key: string, value: any) => {
-    setSaving(true);
+    setSavingKey(key);
     try {
       const { error } = await supabase
         .from('system_settings')
@@ -72,7 +72,7 @@ export default function SettingsPage() {
       console.error(`Error saving ${key}:`, err);
       alert(`Failed to save ${key}`);
     } finally {
-      setSaving(false);
+      setSavingKey(null);
     }
   };
 
@@ -120,9 +120,10 @@ export default function SettingsPage() {
               <button 
                 className="btn-secondary" 
                 onClick={() => handleSave('clinic_name', clinicName)}
-                disabled={saving || clinicName === settings['clinic_name']?.value}
+                disabled={savingKey === 'clinic_name' || clinicName === settings['clinic_name']?.value}
               >
-                <Save size={16} /> Save
+                {savingKey === 'clinic_name' ? <Loader2 size={16} className="spinner" /> : <Save size={16} />} 
+                {savingKey === 'clinic_name' ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
@@ -147,9 +148,10 @@ export default function SettingsPage() {
                 className="btn-secondary" 
                 style={{ marginTop: '0', flexShrink: 0 }}
                 onClick={() => handleSave('system_prompt', systemPrompt)}
-                disabled={saving || systemPrompt === settings['system_prompt']?.value}
+                disabled={savingKey === 'system_prompt' || systemPrompt === settings['system_prompt']?.value}
               >
-                <Save size={16} /> Save
+                {savingKey === 'system_prompt' ? <Loader2 size={16} className="spinner" /> : <Save size={16} />} 
+                {savingKey === 'system_prompt' ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
@@ -170,9 +172,10 @@ export default function SettingsPage() {
               <button 
                 className="btn-secondary" 
                 onClick={() => handleSave('admin_line_user_id', adminLineId)}
-                disabled={saving || adminLineId === settings['admin_line_user_id']?.value}
+                disabled={savingKey === 'admin_line_user_id' || adminLineId === settings['admin_line_user_id']?.value}
               >
-                <Save size={16} /> Save
+                {savingKey === 'admin_line_user_id' ? <Loader2 size={16} className="spinner" /> : <Save size={16} />} 
+                {savingKey === 'admin_line_user_id' ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
@@ -189,8 +192,8 @@ export default function SettingsPage() {
                 onChange={e => setNewKeyword(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addKeyword()}
               />
-              <button className="btn-primary" onClick={addKeyword} disabled={saving || !newKeyword.trim()}>
-                <Plus size={16} /> Add
+              <button className="btn-primary" onClick={addKeyword} disabled={savingKey === 'handoff_keywords' || !newKeyword.trim()}>
+                {savingKey === 'handoff_keywords' ? <Loader2 size={16} className="spinner" /> : <Plus size={16} />} Add
               </button>
             </div>
             
@@ -223,9 +226,10 @@ export default function SettingsPage() {
               <button 
                 className="btn-secondary" 
                 onClick={() => handleSave('fb_page_access_token', fbAccessToken)}
-                disabled={saving || fbAccessToken === settings['fb_page_access_token']?.value}
+                disabled={savingKey === 'fb_page_access_token' || fbAccessToken === settings['fb_page_access_token']?.value}
               >
-                <Save size={16} /> Save
+                {savingKey === 'fb_page_access_token' ? <Loader2 size={16} className="spinner" /> : <Save size={16} />} 
+                {savingKey === 'fb_page_access_token' ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
@@ -242,9 +246,10 @@ export default function SettingsPage() {
               <button 
                 className="btn-secondary" 
                 onClick={() => handleSave('fb_verify_token', fbVerifyToken)}
-                disabled={saving || fbVerifyToken === settings['fb_verify_token']?.value}
+                disabled={savingKey === 'fb_verify_token' || fbVerifyToken === settings['fb_verify_token']?.value}
               >
-                <Save size={16} /> Save
+                {savingKey === 'fb_verify_token' ? <Loader2 size={16} className="spinner" /> : <Save size={16} />} 
+                {savingKey === 'fb_verify_token' ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
