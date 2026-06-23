@@ -1,10 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getSystemPrompt } from './systemPrompt';
 import { supabaseAdmin, getSystemSetting } from './supabase';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 async function getKnowledgeBaseContext(): Promise<string> {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -65,7 +63,7 @@ async function getKnowledgeBaseContext(): Promise<string> {
   }
 }
 
-export async function getReplyFromClaude(messages: {role: 'user' | 'assistant', content: string}[]): Promise<string> {
+export async function getReplyFromAI(messages: {role: 'user' | 'assistant', content: string}[]): Promise<string> {
   const envClinicName = process.env.CLINIC_NAME || 'คลินิกเสริมความงาม';
   const clinicName = await getSystemSetting<string>('clinic_name', envClinicName);
   const baseSystemPrompt = getSystemPrompt(clinicName);
@@ -77,36 +75,29 @@ export async function getReplyFromClaude(messages: {role: 'user' | 'assistant', 
   const finalSystemPrompt = `${baseSystemPrompt}\n\n${knowledgeBase}`;
 
   try {
-    console.log(`[AI] Sending message to Claude...`);
-    const response = await anthropic.messages.create(
-      {
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6', // ดึงจาก .env หรือใช้ claude-sonnet-4-6 ตามที่คุณต้องการ
-        max_tokens: 1024,
-        system: finalSystemPrompt,
-        messages: messages,
-      },
-      {
-        timeout: 10000, // 10 seconds timeout
-      }
-    );
+    console.log(`[AI] Sending message to Gemini...`);
+    
+    const model = genAI.getGenerativeModel({ 
+        model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+        systemInstruction: finalSystemPrompt
+    });
 
-    console.log(`[AI] Received response from Claude.`);
-    if (response.content.length > 0 && response.content[0].type === 'text') {
-      return response.content[0].text;
-    }
-    
-    return 'ขออภัยค่ะ ระบบไม่สามารถตอบกลับได้ในขณะนี้';
+    const mappedHistory = messages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+    }));
+
+    // For safety, remove any empty text parts if they exist
+    const validHistory = mappedHistory.filter(m => m.parts[0].text && m.parts[0].text.trim().length > 0);
+
+    const response = await model.generateContent({
+        contents: validHistory
+    });
+
+    console.log(`[AI] Received response from Gemini.`);
+    return response.response.text();
   } catch (error) {
-    console.error(`[AI] Error communicating with Claude:`, error);
-    
-    // จัดการ error กรณี Claude API timeout
-    if (error instanceof Anthropic.APIError && error.status === 408) {
-       return 'ขออภัยค่ะ ระบบตอบกลับล่าช้า กรุณาลองใหม่อีกครั้งนะคะ';
-    }
-    if (error instanceof Anthropic.APIConnectionTimeoutError) {
-       return 'ขออภัยค่ะ การเชื่อมต่อกับระบบล่าช้ากว่าปกติ กรุณาลองใหม่อีกครั้งนะคะ';
-    }
-    
+    console.error(`[AI] Error communicating with Gemini:`, error);
     return 'ขออภัยค่ะ เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้งในภายหลังค่ะ';
   }
 }

@@ -1,6 +1,6 @@
 import { supabaseAdmin, getSystemSetting } from './supabase';
 import { WebhookEvent, MessageEvent, TextEventMessage, messagingApi } from '@line/bot-sdk';
-import { getReplyFromClaude } from './aiService';
+import { getReplyFromAI } from './aiService';
 
 const lineClient = new messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
@@ -105,8 +105,8 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
 
   console.log(`[LINE] Received text message: "${userMessage}"`);
 
-  // 4. ส่งประวัติทั้งหมดไปให้ Claude พร้อม system prompt
-  const replyText = await getReplyFromClaude(chatHistory);
+  // 4. ส่งประวัติทั้งหมดไปให้ Gemini พร้อม system prompt
+  const replyText = await getReplyFromAI(chatHistory);
 
   // เพิ่มข้อความที่ Claude ตอบกลับไปในประวัติ
   chatHistory.push({ role: 'assistant', content: replyText });
