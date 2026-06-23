@@ -57,6 +57,9 @@ export default function SettingsPage() {
   const handleSave = async (key: string, value: any) => {
     setSavingKey(key);
     try {
+      // Add a minimum delay so the saving animation is visible
+      await new Promise(resolve => setTimeout(resolve, 600));
+      
       const { error } = await supabase
         .from('system_settings')
         .update({ value, updated_at: new Date().toISOString() })
