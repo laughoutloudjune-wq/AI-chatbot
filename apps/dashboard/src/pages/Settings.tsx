@@ -121,7 +121,7 @@ export default function SettingsPage() {
                 onChange={e => setClinicName(e.target.value)}
               />
               <button 
-                className="btn-secondary" 
+                className="btn btn-secondary" 
                 onClick={() => handleSave('clinic_name', clinicName)}
                 disabled={savingKey === 'clinic_name' || clinicName === settings['clinic_name']?.value}
               >
@@ -148,7 +148,7 @@ export default function SettingsPage() {
                 onChange={e => setSystemPrompt(e.target.value)}
               />
               <button 
-                className="btn-secondary" 
+                className="btn btn-secondary" 
                 style={{ marginTop: '0', flexShrink: 0 }}
                 onClick={() => handleSave('system_prompt', systemPrompt)}
                 disabled={savingKey === 'system_prompt' || systemPrompt === settings['system_prompt']?.value}
@@ -173,7 +173,7 @@ export default function SettingsPage() {
                 onChange={e => setAdminLineId(e.target.value)}
               />
               <button 
-                className="btn-secondary" 
+                className="btn btn-secondary" 
                 onClick={() => handleSave('admin_line_user_id', adminLineId)}
                 disabled={savingKey === 'admin_line_user_id' || adminLineId === settings['admin_line_user_id']?.value}
               >
@@ -195,7 +195,7 @@ export default function SettingsPage() {
                 onChange={e => setNewKeyword(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addKeyword()}
               />
-              <button className="btn-primary" onClick={addKeyword} disabled={savingKey === 'handoff_keywords' || !newKeyword.trim()}>
+              <button className="btn btn-primary" onClick={addKeyword} disabled={savingKey === 'handoff_keywords' || !newKeyword.trim()}>
                 {savingKey === 'handoff_keywords' ? <Loader2 size={16} className="spinner" /> : <Plus size={16} />} Add
               </button>
             </div>
@@ -227,7 +227,7 @@ export default function SettingsPage() {
                 placeholder="EAA..."
               />
               <button 
-                className="btn-secondary" 
+                className="btn btn-secondary" 
                 onClick={() => handleSave('fb_page_access_token', fbAccessToken)}
                 disabled={savingKey === 'fb_page_access_token' || fbAccessToken === settings['fb_page_access_token']?.value}
               >
@@ -247,7 +247,7 @@ export default function SettingsPage() {
                 onChange={e => setFbVerifyToken(e.target.value)}
               />
               <button 
-                className="btn-secondary" 
+                className="btn btn-secondary" 
                 onClick={() => handleSave('fb_verify_token', fbVerifyToken)}
                 disabled={savingKey === 'fb_verify_token' || fbVerifyToken === settings['fb_verify_token']?.value}
               >
