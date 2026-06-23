@@ -40,7 +40,7 @@ export function startCronJobs() {
         const baseSystemPrompt = getSystemPrompt(process.env.CLINIC_NAME || 'คลินิก');
 
         const model = genAI.getGenerativeModel({ 
-          model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+          model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
           systemInstruction: baseSystemPrompt
         });
 
