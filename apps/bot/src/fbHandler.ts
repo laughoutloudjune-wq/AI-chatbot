@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { supabaseAdmin, getSystemSetting } from './supabase';
-import { getReplyFromClaude } from './aiService';
+import { getReplyFromAI } from './aiService';
 import { notifyAdmin } from './lineHandler';
 
 export async function handleFbVerify(req: Request, res: Response) {
@@ -172,7 +172,7 @@ export async function handleFbEvent(req: Request, res: Response) {
         console.log(`[FB] Received text message: "${userMessage}"`);
 
         // 3. AI Reply
-        const replyText = await getReplyFromClaude(chatHistory);
+        const replyText = await getReplyFromAI(chatHistory);
 
         chatHistory.push({ role: 'assistant', content: replyText });
 

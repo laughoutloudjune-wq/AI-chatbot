@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { supabaseAdmin } from '../supabase';
 import { messagingApi } from '@line/bot-sdk';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getSystemPrompt } from '../systemPrompt';
 import { sendFbMessage } from '../fbHandler';
 
@@ -9,9 +9,7 @@ const lineClient = new messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
 });
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export function startCronJobs() {
   console.log('[Cron] Initializing cron jobs...');
@@ -41,15 +39,17 @@ export function startCronJobs() {
 
         const baseSystemPrompt = getSystemPrompt(process.env.CLINIC_NAME || 'คลินิก');
 
-        const response = await anthropic.messages.create({
-          model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
-          max_tokens: 500,
-          system: baseSystemPrompt,
-          messages: [{ role: 'user', content: prompt }]
+        const model = genAI.getGenerativeModel({ 
+          model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+          systemInstruction: baseSystemPrompt
         });
 
-        if (response.content.length > 0 && response.content[0].type === 'text') {
-          const followUpMsg = response.content[0].text;
+        const response = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+
+        const followUpMsg = response.response.text();
+        if (followUpMsg && followUpMsg.trim().length > 0) {
 
           const isFb = session.user_id.startsWith('fb_');
 
