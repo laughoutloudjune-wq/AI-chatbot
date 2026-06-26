@@ -142,17 +142,19 @@ export async function handleFbEvent(req: Request, res: Response) {
            return;
         }
         
+        const customerName = await getFbCustomerName(senderId);
+
         // If no text, ignore for now (or handle images)
         if (!userMessage) {
           if (webhook_event.message.attachments) {
              await sendFbMessage(senderId, 'แอดมินได้รับรูปแล้วค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้คุณหมอประเมินให้นะคะ 🙏🏻');
-             const customerName = await getFbCustomerName(senderId);
              await notifyAdmin('ลูกค้าส่งรูปภาพ (Facebook)', `ชื่อลูกค้า: ${customerName}\nFacebook Sender ID: ${senderId}`);
              
              // Pause user
              const fbUserId = `fb_${senderId}`;
              await supabaseAdmin.from('chat_sessions').upsert({
                user_id: fbUserId,
+               customer_name: customerName,
                last_message: '[IMAGE]',
                last_interaction_at: new Date().toISOString(),
                is_paused: true,
@@ -192,6 +194,7 @@ export async function handleFbEvent(req: Request, res: Response) {
         if (isPaused) {
           await supabaseAdmin.from('chat_sessions').update({
             last_message: userMessage,
+            customer_name: customerName,
             last_interaction_at: new Date().toISOString()
           }).eq('user_id', fbUserId);
           console.log(`[FB] User ${fbUserId} is paused. Ignoring message.`);
@@ -205,13 +208,13 @@ export async function handleFbEvent(req: Request, res: Response) {
 
         if (shouldHandoff) {
           await sendFbMessage(senderId, 'แอดมินรับทราบค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้เจ้าหน้าที่ฝ่ายที่เกี่ยวข้องมาดูแลต่อนะคะ 🙏🏻');
-          const customerName = await getFbCustomerName(senderId);
           await notifyAdmin('พบข้อความที่ต้องโอนสาย (Facebook)', `ชื่อลูกค้า: ${customerName}\nข้อความ: "${userMessage}"`);
           
           // Pause user
           chatHistory.push({ role: 'user', content: userMessage });
           await supabaseAdmin.from('chat_sessions').upsert({
             user_id: fbUserId,
+            customer_name: customerName,
             last_message: userMessage,
             history: chatHistory.slice(-10),
             last_interaction_at: new Date().toISOString(),
@@ -254,7 +257,6 @@ export async function handleFbEvent(req: Request, res: Response) {
         }
 
         if (isHandoff) {
-          const customerName = await getFbCustomerName(senderId);
           await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ช่องทาง: Facebook\nชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
         }
         
@@ -262,6 +264,7 @@ export async function handleFbEvent(req: Request, res: Response) {
         try {
           await supabaseAdmin.from('chat_sessions').upsert({
             user_id: fbUserId,
+            customer_name: customerName,
             last_message: userMessage,
             history: chatHistory,
             last_interaction_at: new Date().toISOString(),

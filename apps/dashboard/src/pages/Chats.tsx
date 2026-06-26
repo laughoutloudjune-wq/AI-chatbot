@@ -4,6 +4,7 @@ import { MessageSquare, Play, Pause, Loader2 } from 'lucide-react';
 
 interface ChatSession {
   user_id: string;
+  customer_name: string | null;
   last_message: string;
   last_interaction_at: string;
   is_paused: boolean;
@@ -41,7 +42,7 @@ export default function ChatsPage() {
 
       const { data, error } = await supabase
         .from('chat_sessions')
-        .select('user_id, last_message, last_interaction_at, is_paused')
+        .select('user_id, customer_name, last_message, last_interaction_at, is_paused')
         .gte('last_interaction_at', yesterday.toISOString())
         .order('last_interaction_at', { ascending: false });
 
@@ -118,8 +119,8 @@ export default function ChatsPage() {
                     <tr key={session.user_id}>
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontWeight: 600 }}>{platform}</span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{displayId}</span>
+                          <span style={{ fontWeight: 600 }}>{session.customer_name || 'Unknown'}</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{platform} • {displayId}</span>
                         </div>
                       </td>
                       <td style={{ maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

@@ -46,18 +46,20 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   const replyToken = messageEvent.replyToken;
   const userId = messageEvent.source?.userId;
 
+  const customerName = await getCustomerName(userId);
+
   // 3. จัดการกรณีลูกค้าส่งรูปภาพ (มักจะให้หมอประเมิน) -> Handoff ทันที
   if (messageEvent.message.type === 'image') {
     await lineClient.replyMessage({
       replyToken: replyToken,
       messages: [{ type: 'text', text: 'แอดมินได้รับรูปแล้วค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้คุณหมอประเมินให้นะคะ 🙏🏻' }],
     });
-    const customerName = await getCustomerName(userId);
     await notifyAdmin('ลูกค้าส่งรูปภาพ', `ชื่อลูกค้า: ${customerName}`);
     
     if (userId) {
       await supabaseAdmin.from('chat_sessions').upsert({
         user_id: userId,
+        customer_name: customerName,
         last_message: '[IMAGE]',
         last_interaction_at: new Date().toISOString(),
         is_paused: true,
@@ -107,6 +109,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
       // update without wiping other fields
       await supabaseAdmin.from('chat_sessions').update({
         last_message: userMessage,
+        customer_name: customerName,
         last_interaction_at: new Date().toISOString()
       }).eq('user_id', userId);
     }
@@ -124,7 +127,6 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
       replyToken: replyToken,
       messages: [{ type: 'text', text: 'แอดมินรับทราบค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้เจ้าหน้าที่ฝ่ายที่เกี่ยวข้องมาดูแลต่อนะคะ 🙏🏻' }],
     });
-    const customerName = await getCustomerName(userId);
     await notifyAdmin('พบข้อความที่ต้องโอนสาย (Handoff)', `ชื่อลูกค้า: ${customerName}\nข้อความ: "${userMessage}"`);
     
     // Pause user
@@ -132,6 +134,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
       chatHistory.push({ role: 'user', content: userMessage });
       await supabaseAdmin.from('chat_sessions').upsert({
         user_id: userId,
+        customer_name: customerName,
         last_message: userMessage,
         history: chatHistory.slice(-10),
         last_interaction_at: new Date().toISOString(),
@@ -189,6 +192,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     try {
       await supabaseAdmin.from('chat_sessions').upsert({
         user_id: userId,
+        customer_name: customerName,
         last_message: userMessage,
         history: chatHistory,
         last_interaction_at: new Date().toISOString(),
