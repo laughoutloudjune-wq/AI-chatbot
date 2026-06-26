@@ -134,11 +134,57 @@ export async function handleFbEvent(req: Request, res: Response) {
              await sendFbMessage(senderId, 'แอดมินได้รับรูปแล้วค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้คุณหมอประเมินให้นะคะ 🙏🏻');
              const customerName = await getFbCustomerName(senderId);
              await notifyAdmin('ลูกค้าส่งรูปภาพ (Facebook)', `ชื่อลูกค้า: ${customerName}\nFacebook Sender ID: ${senderId}`);
+             
+             // Pause user
+             const fbUserId = `fb_${senderId}`;
+             await supabaseAdmin.from('chat_sessions').upsert({
+               user_id: fbUserId,
+               last_message: '[IMAGE]',
+               last_interaction_at: new Date().toISOString(),
+               is_paused: true,
+               follow_up_sent: false
+             });
           }
           return;
         }
+
+        const fbUserId = `fb_${senderId}`;
         
-        // 1. Keyword-based Handoff
+        // 1. Fetch Session state
+        let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
+        let isPaused = false;
+        
+        try {
+          const { data } = await supabaseAdmin.from('chat_sessions').select('history, is_paused, last_interaction_at').eq('user_id', fbUserId).single();
+          if (data) {
+            if (data.history) chatHistory = data.history;
+            if (data.is_paused) {
+              const lastInteraction = new Date(data.last_interaction_at).getTime();
+              const now = new Date().getTime();
+              const twoHours = 2 * 60 * 60 * 1000;
+              if (now - lastInteraction > twoHours) {
+                isPaused = false; // Auto resume
+                console.log(`[FB] Auto-resuming session for ${fbUserId} after 2 hours.`);
+              } else {
+                isPaused = true;
+              }
+            }
+          }
+        } catch (err) {
+          // Ignored
+        }
+
+        // 2. If paused, just update interaction time and stop
+        if (isPaused) {
+          await supabaseAdmin.from('chat_sessions').update({
+            last_message: userMessage,
+            last_interaction_at: new Date().toISOString()
+          }).eq('user_id', fbUserId);
+          console.log(`[FB] User ${fbUserId} is paused. Ignoring message.`);
+          return;
+        }
+        
+        // 3. Keyword-based Handoff
         const defaultKeywords = ['รีวิว', 'influencer', 'ร่วมงาน', 'ติดต่อเรื่อง', 'marketing', 'อยู่ไกล', 'แพงไป', 'แพงจัง', 'คุยกับคน', 'ขอสายแอดมิน'];
         const handoffKeywords = await getSystemSetting<string[]>('handoff_keywords', defaultKeywords);
         const shouldHandoff = handoffKeywords.some(kw => userMessage.toLowerCase().includes(kw));
@@ -147,20 +193,18 @@ export async function handleFbEvent(req: Request, res: Response) {
           await sendFbMessage(senderId, 'แอดมินรับทราบค่ะ รบกวนรอสักครู่นะคะ เดี๋ยวให้เจ้าหน้าที่ฝ่ายที่เกี่ยวข้องมาดูแลต่อนะคะ 🙏🏻');
           const customerName = await getFbCustomerName(senderId);
           await notifyAdmin('พบข้อความที่ต้องโอนสาย (Facebook)', `ชื่อลูกค้า: ${customerName}\nข้อความ: "${userMessage}"`);
+          
+          // Pause user
+          chatHistory.push({ role: 'user', content: userMessage });
+          await supabaseAdmin.from('chat_sessions').upsert({
+            user_id: fbUserId,
+            last_message: userMessage,
+            history: chatHistory.slice(-10),
+            last_interaction_at: new Date().toISOString(),
+            is_paused: true,
+            follow_up_sent: false
+          });
           return;
-        }
-        
-        // 2. Chat History handling
-        const fbUserId = `fb_${senderId}`; // prefix to avoid collision with LINE IDs
-        let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
-        
-        try {
-          const { data } = await supabaseAdmin.from('chat_sessions').select('history').eq('user_id', fbUserId).single();
-          if (data && data.history) {
-            chatHistory = data.history;
-          }
-        } catch (err) {
-          console.error('[FB] Error fetching chat session:', err);
         }
 
         chatHistory.push({ role: 'user', content: userMessage });
@@ -176,18 +220,7 @@ export async function handleFbEvent(req: Request, res: Response) {
 
         chatHistory.push({ role: 'assistant', content: replyText });
 
-        // 4. Save Session
-        try {
-          await supabaseAdmin.from('chat_sessions').upsert({
-            user_id: fbUserId,
-            last_message: userMessage,
-            history: chatHistory,
-            last_interaction_at: new Date().toISOString(),
-            follow_up_sent: false
-          });
-        } catch (err) {
-          console.error('[FB] Error saving chat session:', err);
-        }
+        // 4. Save Session (We don't save here yet, we save after handoff detection to capture is_paused properly!)
         
         // 5. Image Parsing & Reply
         const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
@@ -209,6 +242,20 @@ export async function handleFbEvent(req: Request, res: Response) {
         if (isHandoff) {
           const customerName = await getFbCustomerName(senderId);
           await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ช่องทาง: Facebook\nชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
+        }
+        
+        // Save Session
+        try {
+          await supabaseAdmin.from('chat_sessions').upsert({
+            user_id: fbUserId,
+            last_message: userMessage,
+            history: chatHistory,
+            last_interaction_at: new Date().toISOString(),
+            is_paused: isHandoff,
+            follow_up_sent: false
+          });
+        } catch (err) {
+          console.error('[FB] Error saving chat session:', err);
         }
         
         await sendFbMessage(senderId, cleanReplyText, imageUrl);

@@ -54,6 +54,16 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     });
     const customerName = await getCustomerName(userId);
     await notifyAdmin('ลูกค้าส่งรูปภาพ', `ชื่อลูกค้า: ${customerName}`);
+    
+    if (userId) {
+      await supabaseAdmin.from('chat_sessions').upsert({
+        user_id: userId,
+        last_message: '[IMAGE]',
+        last_interaction_at: new Date().toISOString(),
+        is_paused: true,
+        follow_up_sent: false
+      });
+    }
     return;
   }
 
@@ -65,7 +75,46 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   const message = messageEvent.message as TextEventMessage;
   const userMessage = message.text;
 
-  // 3.1 Keyword-based Handoff
+  // 3.1 Fetch Session state
+  let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
+  let isPaused = false;
+  
+  if (userId) {
+    try {
+      const { data } = await supabaseAdmin.from('chat_sessions').select('history, is_paused, last_interaction_at').eq('user_id', userId).single();
+      if (data) {
+        if (data.history) chatHistory = data.history;
+        if (data.is_paused) {
+          const lastInteraction = new Date(data.last_interaction_at).getTime();
+          const now = new Date().getTime();
+          const twoHours = 2 * 60 * 60 * 1000;
+          if (now - lastInteraction > twoHours) {
+            isPaused = false; // Auto resume
+            console.log(`[LINE] Auto-resuming session for ${userId} after 2 hours.`);
+          } else {
+            isPaused = true;
+          }
+        }
+      }
+    } catch (err) {
+      // Ignored
+    }
+  }
+
+  // 3.2 If paused, just update interaction time and stop
+  if (isPaused) {
+    if (userId) {
+      // update without wiping other fields
+      await supabaseAdmin.from('chat_sessions').update({
+        last_message: userMessage,
+        last_interaction_at: new Date().toISOString()
+      }).eq('user_id', userId);
+    }
+    console.log(`[LINE] User ${userId} is paused. Ignoring message.`);
+    return;
+  }
+
+  // 3.3 Keyword-based Handoff
   const defaultKeywords = ['รีวิว', 'influencer', 'ร่วมงาน', 'ติดต่อเรื่อง', 'marketing', 'อยู่ไกล', 'แพงไป', 'แพงจัง', 'คุยกับคน', 'ขอสายแอดมิน'];
   const handoffKeywords = await getSystemSetting<string[]>('handoff_keywords', defaultKeywords);
   const shouldHandoff = handoffKeywords.some(kw => userMessage.toLowerCase().includes(kw));
@@ -77,28 +126,26 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     });
     const customerName = await getCustomerName(userId);
     await notifyAdmin('พบข้อความที่ต้องโอนสาย (Handoff)', `ชื่อลูกค้า: ${customerName}\nข้อความ: "${userMessage}"`);
-    return;
-  }
-
-  // 3.2 บันทึก Session และดึงประวัติเพื่อส่งให้ AI
-  let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
-  
-  if (userId) {
-    try {
-      // ดึงประวัติเดิม
-      const { data } = await supabaseAdmin.from('chat_sessions').select('history').eq('user_id', userId).single();
-      if (data && data.history) {
-        chatHistory = data.history;
-      }
-    } catch (err) {
-      console.error('[LINE] Error fetching chat session:', err);
+    
+    // Pause user
+    if (userId) {
+      chatHistory.push({ role: 'user', content: userMessage });
+      await supabaseAdmin.from('chat_sessions').upsert({
+        user_id: userId,
+        last_message: userMessage,
+        history: chatHistory.slice(-10),
+        last_interaction_at: new Date().toISOString(),
+        is_paused: true,
+        follow_up_sent: false
+      });
     }
+    return;
   }
 
   // เพิ่มข้อความใหม่ของ user
   chatHistory.push({ role: 'user', content: userMessage });
 
-  // จำกัดประวัติให้เหลือแค่ 10 ข้อความล่าสุด เพื่อไม่ให้เปลือง Token
+  // จำกัดประวัติให้เหลือแค่ 10 ข้อความล่าสุด
   if (chatHistory.length > 10) {
     chatHistory = chatHistory.slice(chatHistory.length - 10);
   }
@@ -111,20 +158,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   // เพิ่มข้อความที่ Claude ตอบกลับไปในประวัติ
   chatHistory.push({ role: 'assistant', content: replyText });
 
-  // บันทึกกลับลง Database
-  if (userId) {
-    try {
-      await supabaseAdmin.from('chat_sessions').upsert({
-        user_id: userId,
-        last_message: userMessage,
-        history: chatHistory,
-        last_interaction_at: new Date().toISOString(),
-        follow_up_sent: false
-      });
-    } catch (err) {
-      console.error('[LINE] Error saving chat session:', err);
-    }
-  }
+
 
   // Parse [IMAGE: url] จากคำตอบของ AI
   const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
@@ -148,6 +182,22 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   if (isHandoff) {
     const customerName = await getCustomerName(userId);
     await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
+  }
+
+  // บันทึกกลับลง Database
+  if (userId) {
+    try {
+      await supabaseAdmin.from('chat_sessions').upsert({
+        user_id: userId,
+        last_message: userMessage,
+        history: chatHistory,
+        last_interaction_at: new Date().toISOString(),
+        is_paused: isHandoff,
+        follow_up_sent: false
+      });
+    } catch (err) {
+      console.error('[LINE] Error saving chat session:', err);
+    }
   }
 
   // 5. Reply กลับหา user ด้วย LINE reply token

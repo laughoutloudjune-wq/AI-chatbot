@@ -1,10 +1,11 @@
 import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Stethoscope, HelpCircle, Activity, Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { Stethoscope, HelpCircle, Activity, Settings as SettingsIcon, LogOut, MessageSquare } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import ServicesPage from './pages/Services';
 import FaqsPage from './pages/Faqs';
 import SettingsPage from './pages/Settings';
+import ChatsPage from './pages/Chats';
 import Login from './pages/Login';
 
 function App() {
@@ -64,6 +65,13 @@ function App() {
               <SettingsIcon size={20} />
               System Settings
             </NavLink>
+            <NavLink 
+              to="/chats" 
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            >
+              <MessageSquare size={20} />
+              Live Chats
+            </NavLink>
           </nav>
           
           <div style={{ padding: '24px', marginTop: 'auto' }}>
@@ -82,6 +90,7 @@ function App() {
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/faqs" element={<FaqsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/chats" element={<ChatsPage />} />
             <Route path="*" element={<Navigate to="/services" replace />} />
           </Routes>
         </main>
