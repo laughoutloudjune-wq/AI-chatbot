@@ -80,13 +80,17 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   // 3.1 Fetch Session state
   let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
   let isPaused = false;
+  let isHumanOnly = false;
   
   if (userId) {
     try {
-      const { data } = await supabaseAdmin.from('chat_sessions').select('history, is_paused, last_interaction_at').eq('user_id', userId).single();
+      const { data } = await supabaseAdmin.from('chat_sessions').select('history, is_paused, human_only, last_interaction_at').eq('user_id', userId).single();
       if (data) {
         if (data.history) chatHistory = data.history;
-        if (data.is_paused) {
+        if (data.human_only) {
+          isHumanOnly = true;
+          isPaused = true; // human_only patients are always paused
+        } else if (data.is_paused) {
           const lastInteraction = new Date(data.last_interaction_at).getTime();
           const now = new Date().getTime();
           const twoHours = 2 * 60 * 60 * 1000;
@@ -103,7 +107,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     }
   }
 
-  // 3.2 If paused, just update interaction time and stop
+  // 3.2 If paused or human_only, just update interaction time and stop
   if (isPaused) {
     if (userId) {
       // update without wiping other fields
@@ -113,7 +117,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
         last_interaction_at: new Date().toISOString()
       }).eq('user_id', userId);
     }
-    console.log(`[LINE] User ${userId} is paused. Ignoring message.`);
+    console.log(`[LINE] User ${userId} is ${isHumanOnly ? 'human_only' : 'paused'}. Ignoring message.`);
     return;
   }
 

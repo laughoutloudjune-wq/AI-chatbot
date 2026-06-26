@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
-import { MessageSquare, Play, Pause, Loader2 } from 'lucide-react';
+import { MessageSquare, Play, Pause, UserX, UserCheck, Loader2 } from 'lucide-react';
 
 interface ChatSession {
   user_id: string;
@@ -8,12 +8,13 @@ interface ChatSession {
   last_message: string;
   last_interaction_at: string;
   is_paused: boolean;
+  human_only: boolean;
 }
 
 export default function ChatsPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [resumingId, setResumingId] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSessions();
@@ -42,8 +43,8 @@ export default function ChatsPage() {
 
       const { data, error } = await supabase
         .from('chat_sessions')
-        .select('user_id, customer_name, last_message, last_interaction_at, is_paused')
-        .gte('last_interaction_at', yesterday.toISOString())
+        .select('user_id, customer_name, last_message, last_interaction_at, is_paused, human_only')
+        .or(`last_interaction_at.gte.${yesterday.toISOString()},human_only.eq.true`)
         .order('last_interaction_at', { ascending: false });
 
       if (error) throw error;
@@ -56,7 +57,7 @@ export default function ChatsPage() {
   };
 
   const handleTogglePause = async (userId: string, currentStatus: boolean) => {
-    setResumingId(userId);
+    setActionId(userId);
     try {
       const { error } = await supabase
         .from('chat_sessions')
@@ -64,15 +65,57 @@ export default function ChatsPage() {
         .eq('user_id', userId);
 
       if (error) throw error;
-      
-      // Update locally
       setSessions(prev => prev.map(s => s.user_id === userId ? { ...s, is_paused: !currentStatus } : s));
     } catch (err) {
       console.error('Error toggling session:', err);
       alert('Failed to update AI status.');
     } finally {
-      setResumingId(null);
+      setActionId(null);
     }
+  };
+
+  const handleToggleHumanOnly = async (userId: string, currentStatus: boolean) => {
+    setActionId(userId);
+    try {
+      const newHumanOnly = !currentStatus;
+      const { error } = await supabase
+        .from('chat_sessions')
+        .update({ 
+          human_only: newHumanOnly,
+          is_paused: newHumanOnly ? true : false 
+        })
+        .eq('user_id', userId);
+
+      if (error) throw error;
+      setSessions(prev => prev.map(s => s.user_id === userId ? { ...s, human_only: newHumanOnly, is_paused: newHumanOnly ? true : false } : s));
+    } catch (err) {
+      console.error('Error toggling human_only:', err);
+      alert('Failed to update patient status.');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const getStatusBadge = (session: ChatSession) => {
+    if (session.human_only) {
+      return (
+        <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#fef3c7', color: '#92400e', fontWeight: 500 }}>
+          🏥 Old Patient
+        </span>
+      );
+    }
+    if (session.is_paused) {
+      return (
+        <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 500 }}>
+          👩‍💼 Human
+        </span>
+      );
+    }
+    return (
+      <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#dcfce7', color: '#166534', fontWeight: 500 }}>
+        🤖 AI
+      </span>
+    );
   };
 
   if (loading) {
@@ -86,7 +129,7 @@ export default function ChatsPage() {
           <MessageSquare className="page-icon" />
           <h1>Live Chats</h1>
         </div>
-        <p className="header-subtitle">Manage customer chats from the last 24 hours</p>
+        <p className="header-subtitle">Manage customer chats • Old patients are permanently human-only</p>
       </header>
 
       <div className="card">
@@ -101,7 +144,7 @@ export default function ChatsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Platform & ID</th>
+                  <th>Customer</th>
                   <th>Last Message</th>
                   <th>Last Interaction</th>
                   <th>Status</th>
@@ -114,6 +157,7 @@ export default function ChatsPage() {
                   const platform = isFb ? 'Facebook' : 'LINE';
                   const displayId = isFb ? session.user_id.replace('fb_', '') : session.user_id;
                   const date = new Date(session.last_interaction_at);
+                  const isLoading = actionId === session.user_id;
                   
                   return (
                     <tr key={session.user_id}>
@@ -133,36 +177,60 @@ export default function ChatsPage() {
                         </div>
                       </td>
                       <td>
-                        {session.is_paused ? (
-                          <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 500 }}>
-                            👩‍💼 Human
-                          </span>
-                        ) : (
-                          <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#dcfce7', color: '#166534', fontWeight: 500 }}>
-                            🤖 AI
-                          </span>
-                        )}
+                        {getStatusBadge(session)}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        {session.is_paused ? (
-                          <button 
-                            className="btn btn-primary"
-                            onClick={() => handleTogglePause(session.user_id, true)}
-                            disabled={resumingId === session.user_id}
-                          >
-                            {resumingId === session.user_id ? <Loader2 size={16} className="spinner" /> : <Play size={16} />}
-                            Return to AI
-                          </button>
-                        ) : (
-                          <button 
-                            className="btn btn-outline"
-                            onClick={() => handleTogglePause(session.user_id, false)}
-                            disabled={resumingId === session.user_id}
-                          >
-                            {resumingId === session.user_id ? <Loader2 size={16} className="spinner" /> : <Pause size={16} />}
-                            Take Over
-                          </button>
-                        )}
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                          {/* Human Only toggle */}
+                          {session.human_only ? (
+                            <button
+                              className="btn btn-outline"
+                              onClick={() => handleToggleHumanOnly(session.user_id, true)}
+                              disabled={isLoading}
+                              title="Remove old patient flag and enable AI"
+                              style={{ fontSize: '0.8rem' }}
+                            >
+                              {isLoading ? <Loader2 size={14} className="spinner" /> : <UserCheck size={14} />}
+                              Enable AI
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-outline"
+                              onClick={() => handleToggleHumanOnly(session.user_id, false)}
+                              disabled={isLoading}
+                              title="Mark as old patient — AI will never answer"
+                              style={{ fontSize: '0.8rem', borderColor: '#d97706', color: '#d97706' }}
+                            >
+                              {isLoading ? <Loader2 size={14} className="spinner" /> : <UserX size={14} />}
+                              Old Patient
+                            </button>
+                          )}
+
+                          {/* Pause/Resume toggle (only show if not human_only) */}
+                          {!session.human_only && (
+                            session.is_paused ? (
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => handleTogglePause(session.user_id, true)}
+                                disabled={isLoading}
+                                style={{ fontSize: '0.8rem' }}
+                              >
+                                {isLoading ? <Loader2 size={14} className="spinner" /> : <Play size={14} />}
+                                Return to AI
+                              </button>
+                            ) : (
+                              <button 
+                                className="btn btn-outline"
+                                onClick={() => handleTogglePause(session.user_id, false)}
+                                disabled={isLoading}
+                                style={{ fontSize: '0.8rem' }}
+                              >
+                                {isLoading ? <Loader2 size={14} className="spinner" /> : <Pause size={14} />}
+                                Take Over
+                              </button>
+                            )
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
