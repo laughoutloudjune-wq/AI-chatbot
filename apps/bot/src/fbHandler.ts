@@ -122,9 +122,17 @@ export async function handleFbEvent(req: Request, res: Response) {
       if (webhook_event.message) {
         const userMessage = webhook_event.message.text;
 
-        // Handle Echo (if we want to implement continuous learning later, it would be here: is_echo === true)
+        // Handle Echo (Admin replies via FB Inbox)
         if (webhook_event.message.is_echo) {
-           // Future: Process admin responses for self-learning
+           const recipientId = webhook_event.recipient?.id;
+           if (recipientId) {
+             const fbUserId = `fb_${recipientId}`;
+             await supabaseAdmin.from('chat_sessions').update({
+               is_paused: true,
+               last_interaction_at: new Date().toISOString()
+             }).eq('user_id', fbUserId);
+             console.log(`[FB] Admin typed a message. Auto-pausing session for ${fbUserId}.`);
+           }
            return;
         }
         

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
-import { MessageSquare, Play, Loader2 } from 'lucide-react';
+import { MessageSquare, Play, Pause, Loader2 } from 'lucide-react';
 
 interface ChatSession {
   user_id: string;
@@ -15,7 +15,7 @@ export default function ChatsPage() {
   const [resumingId, setResumingId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPausedSessions();
+    fetchSessions();
     
     // Set up real-time subscription
     const channel = supabase
@@ -24,7 +24,7 @@ export default function ChatsPage() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_sessions' },
         () => {
-          fetchPausedSessions();
+          fetchSessions();
         }
       )
       .subscribe();
@@ -34,12 +34,15 @@ export default function ChatsPage() {
     };
   }, []);
 
-  const fetchPausedSessions = async () => {
+  const fetchSessions = async () => {
     try {
+      const yesterday = new Date();
+      yesterday.setHours(yesterday.getHours() - 24);
+
       const { data, error } = await supabase
         .from('chat_sessions')
         .select('user_id, last_message, last_interaction_at, is_paused')
-        .eq('is_paused', true)
+        .gte('last_interaction_at', yesterday.toISOString())
         .order('last_interaction_at', { ascending: false });
 
       if (error) throw error;
@@ -51,21 +54,21 @@ export default function ChatsPage() {
     }
   };
 
-  const handleResume = async (userId: string) => {
+  const handleTogglePause = async (userId: string, currentStatus: boolean) => {
     setResumingId(userId);
     try {
       const { error } = await supabase
         .from('chat_sessions')
-        .update({ is_paused: false })
+        .update({ is_paused: !currentStatus })
         .eq('user_id', userId);
 
       if (error) throw error;
       
-      // Remove from list locally
-      setSessions(prev => prev.filter(s => s.user_id !== userId));
+      // Update locally
+      setSessions(prev => prev.map(s => s.user_id === userId ? { ...s, is_paused: !currentStatus } : s));
     } catch (err) {
-      console.error('Error resuming session:', err);
-      alert('Failed to unpause the AI.');
+      console.error('Error toggling session:', err);
+      alert('Failed to update AI status.');
     } finally {
       setResumingId(null);
     }
@@ -80,17 +83,17 @@ export default function ChatsPage() {
       <header className="page-header">
         <div className="header-title">
           <MessageSquare className="page-icon" />
-          <h1>Live Chats (Handoffs)</h1>
+          <h1>Live Chats</h1>
         </div>
-        <p className="header-subtitle">Manage customers currently talking to a human admin</p>
+        <p className="header-subtitle">Manage customer chats from the last 24 hours</p>
       </header>
 
       <div className="card">
         {sessions.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
             <MessageSquare size={48} style={{ opacity: 0.2, margin: '0 auto 16px' }} />
-            <h3>No paused chats right now</h3>
-            <p>The AI is currently handling all customer inquiries.</p>
+            <h3>No active chats</h3>
+            <p>No customers have messaged in the last 24 hours.</p>
           </div>
         ) : (
           <div className="table-container">
@@ -100,6 +103,7 @@ export default function ChatsPage() {
                   <th>Platform & ID</th>
                   <th>Last Message</th>
                   <th>Last Interaction</th>
+                  <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Action</th>
                 </tr>
               </thead>
@@ -127,15 +131,37 @@ export default function ChatsPage() {
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{date.toLocaleTimeString()}</span>
                         </div>
                       </td>
+                      <td>
+                        {session.is_paused ? (
+                          <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 500 }}>
+                            👩‍💼 Human
+                          </span>
+                        ) : (
+                          <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: '#dcfce7', color: '#166534', fontWeight: 500 }}>
+                            🤖 AI
+                          </span>
+                        )}
+                      </td>
                       <td style={{ textAlign: 'right' }}>
-                        <button 
-                          className="btn btn-primary"
-                          onClick={() => handleResume(session.user_id)}
-                          disabled={resumingId === session.user_id}
-                        >
-                          {resumingId === session.user_id ? <Loader2 size={16} className="spinner" /> : <Play size={16} />}
-                          Return to AI
-                        </button>
+                        {session.is_paused ? (
+                          <button 
+                            className="btn btn-primary"
+                            onClick={() => handleTogglePause(session.user_id, true)}
+                            disabled={resumingId === session.user_id}
+                          >
+                            {resumingId === session.user_id ? <Loader2 size={16} className="spinner" /> : <Play size={16} />}
+                            Return to AI
+                          </button>
+                        ) : (
+                          <button 
+                            className="btn btn-outline"
+                            onClick={() => handleTogglePause(session.user_id, false)}
+                            disabled={resumingId === session.user_id}
+                          >
+                            {resumingId === session.user_id ? <Loader2 size={16} className="spinner" /> : <Pause size={16} />}
+                            Take Over
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
