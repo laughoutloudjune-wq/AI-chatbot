@@ -21,6 +21,7 @@ export default function SettingsPage() {
   const [fbVerifyToken, setFbVerifyToken] = useState('');
   const [handoffKeywords, setHandoffKeywords] = useState<string[]>([]);
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [takeoverMinutes, setTakeoverMinutes] = useState(120);
 
   useEffect(() => {
     fetchSettings();
@@ -45,6 +46,7 @@ export default function SettingsPage() {
       setFbVerifyToken(settingsMap['fb_verify_token']?.value || '');
       setHandoffKeywords(settingsMap['handoff_keywords']?.value || []);
       setSystemPrompt(settingsMap['system_prompt']?.value || '');
+      setTakeoverMinutes(settingsMap['takeover_duration_minutes']?.value || 120);
       
     } catch (err) {
       console.error('Error fetching settings:', err);
@@ -209,6 +211,28 @@ export default function SettingsPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Take Over Duration (minutes)</label>
+            <p className="help-text">How long "Take Over" lasts before AI automatically resumes. Default: 120 minutes (2 hours).</p>
+            <div className="input-with-action">
+              <input 
+                type="number" 
+                min="5" 
+                max="1440" 
+                value={takeoverMinutes} 
+                onChange={e => setTakeoverMinutes(Number(e.target.value))}
+              />
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => handleSave('takeover_duration_minutes', takeoverMinutes)}
+                disabled={savingKey === 'takeover_duration_minutes' || takeoverMinutes === settings['takeover_duration_minutes']?.value}
+              >
+                {savingKey === 'takeover_duration_minutes' ? <Loader2 size={16} className="spinner" /> : <Save size={16} />} 
+                {savingKey === 'takeover_duration_minutes' ? 'Saving...' : 'Save'}
+              </button>
             </div>
           </div>
         </section>

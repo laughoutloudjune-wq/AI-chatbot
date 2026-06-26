@@ -171,6 +171,7 @@ export async function handleFbEvent(req: Request, res: Response) {
         let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
         let isPaused = false;
         let isHumanOnly = false;
+        const takeoverMinutes = await getSystemSetting<number>('takeover_duration_minutes', 120);
         
         try {
           const { data } = await supabaseAdmin.from('chat_sessions').select('history, is_paused, human_only, last_interaction_at').eq('user_id', fbUserId).single();
@@ -182,10 +183,10 @@ export async function handleFbEvent(req: Request, res: Response) {
             } else if (data.is_paused) {
               const lastInteraction = new Date(data.last_interaction_at).getTime();
               const now = new Date().getTime();
-              const twoHours = 2 * 60 * 60 * 1000;
-              if (now - lastInteraction > twoHours) {
+              const timeoutMs = takeoverMinutes * 60 * 1000;
+              if (now - lastInteraction > timeoutMs) {
                 isPaused = false; // Auto resume
-                console.log(`[FB] Auto-resuming session for ${fbUserId} after 2 hours.`);
+                console.log(`[FB] Auto-resuming session for ${fbUserId} after ${takeoverMinutes} minutes.`);
               } else {
                 isPaused = true;
               }

@@ -81,6 +81,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
   let isPaused = false;
   let isHumanOnly = false;
+  const takeoverMinutes = await getSystemSetting<number>('takeover_duration_minutes', 120);
   
   if (userId) {
     try {
@@ -93,10 +94,10 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
         } else if (data.is_paused) {
           const lastInteraction = new Date(data.last_interaction_at).getTime();
           const now = new Date().getTime();
-          const twoHours = 2 * 60 * 60 * 1000;
-          if (now - lastInteraction > twoHours) {
+          const timeoutMs = takeoverMinutes * 60 * 1000;
+          if (now - lastInteraction > timeoutMs) {
             isPaused = false; // Auto resume
-            console.log(`[LINE] Auto-resuming session for ${userId} after 2 hours.`);
+            console.log(`[LINE] Auto-resuming session for ${userId} after ${takeoverMinutes} minutes.`);
           } else {
             isPaused = true;
           }
