@@ -80,8 +80,22 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     return;
   }
 
-  const message = messageEvent.message as TextEventMessage;
-  const userMessage = message.text;
+  const userMessage = (messageEvent.message as TextEventMessage).text;
+
+  // Secret command to easily get Group ID or User ID
+  if (userMessage.trim() === '/getid') {
+    let idToReport = messageEvent.source.userId;
+    if (messageEvent.source.type === 'group') {
+      idToReport = messageEvent.source.groupId;
+    } else if (messageEvent.source.type === 'room') {
+      idToReport = messageEvent.source.roomId;
+    }
+    await lineClient.replyMessage({
+      replyToken: replyToken,
+      messages: [{ type: 'text', text: `Your ID is:\n${idToReport}` }]
+    });
+    return;
+  }
 
   // 3.1 Fetch Session state
   let chatHistory: { role: 'user' | 'assistant', content: string }[] = [];
