@@ -231,7 +231,19 @@ export async function handleFbEvent(req: Request, res: Response) {
           return;
         }
 
-        chatHistory.push({ role: 'user', content: userMessage });
+        let adTitle = '';
+        const referral = webhook_event.referral || webhook_event.message?.referral || webhook_event.postback?.referral;
+        if (referral && referral.source === 'ADS') {
+          adTitle = referral.ad_title || '';
+        }
+
+        let finalUserMessage = userMessage;
+        if (adTitle) {
+          finalUserMessage = `[System Note: The customer clicked on your ad titled "${adTitle}"]\n\n${userMessage}`;
+          logSystem('info', 'FB', `Ad Referral Detected: ${adTitle}`);
+        }
+
+        chatHistory.push({ role: 'user', content: finalUserMessage });
 
         if (chatHistory.length > 10) {
           chatHistory = chatHistory.slice(chatHistory.length - 10);
