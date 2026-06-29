@@ -6,6 +6,7 @@ import ServicesPage from './pages/Services';
 import FaqsPage from './pages/Faqs';
 import SettingsPage from './pages/Settings';
 import ChatsPage from './pages/Chats';
+import LogsPage from './pages/Logs';
 import Login from './pages/Login';
 
 function App() {
@@ -72,6 +73,13 @@ function App() {
               <MessageSquare size={20} />
               Live Chats
             </NavLink>
+            <NavLink 
+              to="/logs" 
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            >
+              <Activity size={20} />
+              System Logs
+            </NavLink>
           </nav>
           
           <div style={{ padding: '24px', marginTop: 'auto' }}>
@@ -91,6 +99,7 @@ function App() {
             <Route path="/faqs" element={<FaqsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/chats" element={<ChatsPage />} />
+            <Route path="/logs" element={<LogsPage />} />
             <Route path="*" element={<Navigate to="/services" replace />} />
           </Routes>
         </main>

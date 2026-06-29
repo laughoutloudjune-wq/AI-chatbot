@@ -1,6 +1,7 @@
 import { supabaseAdmin, getSystemSetting } from './supabase';
 import { WebhookEvent, MessageEvent, TextEventMessage, messagingApi } from '@line/bot-sdk';
 import { getReplyFromAI } from './aiService';
+import { logSystem } from './logger';
 
 const lineClient = new messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
@@ -9,7 +10,7 @@ const lineClient = new messagingApi.MessagingApiClient({
 export async function notifyAdmin(reason: string, details: string) {
   const adminId = await getSystemSetting<string>('admin_line_user_id', process.env.ADMIN_LINE_USER_ID || '');
   if (!adminId || adminId.trim() === '') {
-    console.error('[LINE] ADMIN_LINE_USER_ID is missing or empty.');
+    logSystem('warn', 'LINE', 'ADMIN_LINE_USER_ID is missing or empty.');
     return;
   }
 
@@ -20,9 +21,9 @@ export async function notifyAdmin(reason: string, details: string) {
       to: adminId,
       messages: [{ type: 'text', text: message }]
     });
-    console.log(`[LINE] Admin notified successfully.`);
-  } catch (error) {
-    console.error(`[LINE] Error notifying admin:`, error);
+    logSystem('info', 'LINE', 'Admin notified successfully.');
+  } catch (error: any) {
+    logSystem('error', 'LINE', `Error notifying admin: ${error.message}`);
   }
 }
 
@@ -32,19 +33,24 @@ async function getCustomerName(userId?: string): Promise<string> {
     const profile = await lineClient.getProfile(userId);
     return profile.displayName;
   } catch (err) {
-    console.error('[LINE] Error fetching profile:', err);
+    logSystem('error', 'LINE', `Error fetching profile: ${err}`);
     return `UserID: ${userId}`;
   }
 }
 
 export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   if (event.type !== 'message') {
+    logSystem('info', 'LINE', `Ignored event type: ${event.type}`);
     return;
   }
 
   const messageEvent = event as MessageEvent;
   const replyToken = messageEvent.replyToken;
   const userId = messageEvent.source?.userId;
+
+  if (messageEvent.source.type === 'user' && messageEvent.source.userId === process.env.LINE_BOT_USER_ID) {
+    return;
+  }
 
   const customerName = await getCustomerName(userId);
 
@@ -70,7 +76,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
   }
 
   if (messageEvent.message.type !== 'text') {
-    console.log(`[LINE] Ignored message type: ${messageEvent.message.type}`);
+    logSystem('info', 'LINE', `Ignored message type: ${messageEvent.message.type}`);
     return;
   }
 
@@ -97,7 +103,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
           const timeoutMs = takeoverMinutes * 60 * 1000;
           if (now - lastInteraction > timeoutMs) {
             isPaused = false; // Auto resume
-            console.log(`[LINE] Auto-resuming session for ${userId} after ${takeoverMinutes} minutes.`);
+            logSystem('info', 'LINE', `Auto-resuming session for ${userId} after ${takeoverMinutes} minutes.`);
           } else {
             isPaused = true;
           }
@@ -118,7 +124,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
         last_interaction_at: new Date().toISOString()
       }).eq('user_id', userId);
     }
-    console.log(`[LINE] User ${userId} is ${isHumanOnly ? 'human_only' : 'paused'}. Ignoring message.`);
+    logSystem('info', 'LINE', `User ${userId} is ${isHumanOnly ? 'human_only' : 'paused'}. Ignoring message.`);
     return;
   }
 
@@ -150,6 +156,13 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     return;
   }
 
+  // Check global AI status before calling AI
+  const aiStatusLine = await getSystemSetting<boolean>('ai_status_line', true);
+  if (!aiStatusLine) {
+    logSystem('info', 'LINE', 'Global AI is OFF for LINE. Skipping AI reply.');
+    return;
+  }
+
   // เพิ่มข้อความใหม่ของ user
   chatHistory.push({ role: 'user', content: userMessage });
 
@@ -158,7 +171,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     chatHistory = chatHistory.slice(chatHistory.length - 10);
   }
 
-  console.log(`[LINE] Received text message: "${userMessage}"`);
+  logSystem('info', 'LINE', `Received text message: "${userMessage}"`);
 
   // 4. ส่งประวัติทั้งหมดไปให้ Gemini พร้อม system prompt
   const replyText = await getReplyFromAI(chatHistory);
@@ -204,14 +217,14 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
         is_paused: isHandoff,
         follow_up_sent: false
       });
-    } catch (err) {
-      console.error('[LINE] Error saving chat session:', err);
+    } catch (err: any) {
+      logSystem('error', 'LINE', `Error saving chat session: ${err.message}`);
     }
   }
 
   // 5. Reply กลับหา user ด้วย LINE reply token
   try {
-    console.log(`[LINE] Sending reply to user...`);
+    logSystem('info', 'LINE', `Sending reply to user...`);
     const messagesToSend: any[] = [{ type: 'text', text: cleanReplyText }];
     
     if (imageUrls.length > 0) {
@@ -228,8 +241,8 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
       replyToken: replyToken,
       messages: messagesToSend,
     });
-    console.log(`[LINE] Reply sent successfully.`);
-  } catch (error) {
-    console.error(`[LINE] Error sending reply message:`, error);
+    logSystem('info', 'LINE', `Reply sent successfully.`);
+  } catch (error: any) {
+    logSystem('error', 'LINE', `Error sending reply: ${error.message}`);
   }
 }

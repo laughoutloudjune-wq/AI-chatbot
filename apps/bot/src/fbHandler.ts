@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { supabaseAdmin, getSystemSetting } from './supabase';
 import { getReplyFromAI } from './aiService';
 import { notifyAdmin } from './lineHandler';
+import { logSystem } from './logger';
 
 export async function handleFbVerify(req: Request, res: Response) {
   const verify_token = await getSystemSetting<string>('fb_verify_token', process.env.FB_VERIFY_TOKEN || '');
@@ -12,7 +13,7 @@ export async function handleFbVerify(req: Request, res: Response) {
   
   if (mode && token) {
     if (mode === 'subscribe' && token === verify_token) {
-      console.log('[FB] Webhook verified');
+      logSystem('info', 'FB', 'Webhook verified');
       res.status(200).send(challenge);
     } else {
       res.sendStatus(403);
@@ -25,7 +26,7 @@ export async function handleFbVerify(req: Request, res: Response) {
 export async function sendFbMessage(senderId: string, text: string, imageUrl?: string) {
   const PAGE_ACCESS_TOKEN = await getSystemSetting<string>('fb_page_access_token', process.env.FB_PAGE_ACCESS_TOKEN || '');
   if (!PAGE_ACCESS_TOKEN) {
-    console.error('[FB] Missing FB_PAGE_ACCESS_TOKEN');
+    logSystem('warn', 'FB', 'Missing FB_PAGE_ACCESS_TOKEN');
     return;
   }
 
@@ -45,10 +46,10 @@ export async function sendFbMessage(senderId: string, text: string, imageUrl?: s
       
       if (!response.ok) {
         const errBody = await response.text();
-        console.error('[FB] Error sending text message:', errBody);
+        logSystem('error', 'FB', `Error sending text message: ${errBody}`);
       }
-    } catch (err) {
-      console.error('[FB] Fetch error (text):', err);
+    } catch (err: any) {
+      logSystem('error', 'FB', `Fetch error (text): ${err.message}`);
     }
   }
 
@@ -75,10 +76,10 @@ export async function sendFbMessage(senderId: string, text: string, imageUrl?: s
       
       if (!response.ok) {
         const errBody = await response.text();
-        console.error('[FB] Error sending image message:', errBody);
+        logSystem('error', 'FB', `Error sending image message: ${errBody}`);
       }
-    } catch (err) {
-      console.error('[FB] Fetch error (image):', err);
+    } catch (err: any) {
+      logSystem('error', 'FB', `Fetch error (image): ${err.message}`);
     }
   }
 }
@@ -92,12 +93,12 @@ async function getFbCustomerName(senderId: string): Promise<string> {
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
-      return `${data.first_name} ${data.last_name}`;
+      return data.name || data.first_name || `FB User ${senderId}`;
     }
-    return `Facebook User: ${senderId}`;
-  } catch (err) {
-    console.error('[FB] Error fetching customer name:', err);
-    return `Facebook User: ${senderId}`;
+    return `FB User ${senderId}`;
+  } catch (err: any) {
+    logSystem('error', 'FB', `Error fetching FB customer name: ${err.message}`);
+    return `FB User ${senderId}`;
   }
 }
 
@@ -138,7 +139,7 @@ export async function handleFbEvent(req: Request, res: Response) {
                is_paused: true,
                last_interaction_at: new Date().toISOString()
              }).eq('user_id', fbUserId);
-             console.log(`[FB] Admin typed a message. Auto-pausing session for ${fbUserId}.`);
+             logSystem('info', 'FB', `Admin typed a message. Auto-pausing session for ${fbUserId}.`);
            }
            return;
         }
@@ -186,7 +187,7 @@ export async function handleFbEvent(req: Request, res: Response) {
               const timeoutMs = takeoverMinutes * 60 * 1000;
               if (now - lastInteraction > timeoutMs) {
                 isPaused = false; // Auto resume
-                console.log(`[FB] Auto-resuming session for ${fbUserId} after ${takeoverMinutes} minutes.`);
+                logSystem('info', 'FB', `Auto-resuming session for ${fbUserId} after ${takeoverMinutes} minutes.`);
               } else {
                 isPaused = true;
               }
@@ -203,7 +204,7 @@ export async function handleFbEvent(req: Request, res: Response) {
             customer_name: customerName,
             last_interaction_at: new Date().toISOString()
           }).eq('user_id', fbUserId);
-          console.log(`[FB] User ${fbUserId} is ${isHumanOnly ? 'human_only' : 'paused'}. Ignoring message.`);
+          logSystem('info', 'FB', `User ${fbUserId} is ${isHumanOnly ? 'human_only' : 'paused'}. Ignoring message.`);
           return;
         }
         
@@ -236,7 +237,28 @@ export async function handleFbEvent(req: Request, res: Response) {
           chatHistory = chatHistory.slice(chatHistory.length - 10);
         }
 
-        console.log(`[FB] Received text message: "${userMessage}"`);
+        logSystem('info', 'FB', `Received text message: "${userMessage}"`);
+
+        // Check global AI status for FB before calling AI
+        const aiStatusFb = await getSystemSetting<boolean>('ai_status_fb', true);
+        if (!aiStatusFb) {
+          logSystem('info', 'FB', 'Global AI is OFF for Facebook. Skipping AI reply.');
+          // Save Session so it appears in Live Chats
+          try {
+            await supabaseAdmin.from('chat_sessions').upsert({
+              user_id: fbUserId,
+              customer_name: customerName,
+              last_message: userMessage,
+              history: chatHistory,
+              last_interaction_at: new Date().toISOString(),
+              is_paused: false,
+              follow_up_sent: false
+            });
+          } catch (err: any) {
+            logSystem('error', 'FB', `Error saving chat session: ${err.message}`);
+          }
+          return;
+        }
 
         // 3. AI Reply
         const replyText = await getReplyFromAI(chatHistory);
@@ -277,8 +299,8 @@ export async function handleFbEvent(req: Request, res: Response) {
             is_paused: isHandoff,
             follow_up_sent: false
           });
-        } catch (err) {
-          console.error('[FB] Error saving chat session:', err);
+        } catch (err: any) {
+          logSystem('error', 'FB', `Error saving chat session: ${err.message}`);
         }
         
         await sendFbMessage(senderId, cleanReplyText, imageUrl);

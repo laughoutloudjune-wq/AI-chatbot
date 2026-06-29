@@ -22,6 +22,8 @@ export default function SettingsPage() {
   const [handoffKeywords, setHandoffKeywords] = useState<string[]>([]);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [takeoverMinutes, setTakeoverMinutes] = useState(120);
+  const [aiStatusLine, setAiStatusLine] = useState(true);
+  const [aiStatusFb, setAiStatusFb] = useState(true);
 
   useEffect(() => {
     fetchSettings();
@@ -47,6 +49,12 @@ export default function SettingsPage() {
       setHandoffKeywords(settingsMap['handoff_keywords']?.value || []);
       setSystemPrompt(settingsMap['system_prompt']?.value || '');
       setTakeoverMinutes(settingsMap['takeover_duration_minutes']?.value || 120);
+      
+      const lineStatus = settingsMap['ai_status_line']?.value;
+      setAiStatusLine(lineStatus !== undefined ? String(lineStatus) === 'true' : true);
+      
+      const fbStatus = settingsMap['ai_status_fb']?.value;
+      setAiStatusFb(fbStatus !== undefined ? String(fbStatus) === 'true' : true);
       
     } catch (err) {
       console.error('Error fetching settings:', err);
@@ -110,6 +118,74 @@ export default function SettingsPage() {
       </header>
 
       <div className="settings-grid">
+        {/* Global AI Status */}
+        <section className="settings-card" style={{ gridColumn: '1 / -1', borderLeft: '4px solid #ef4444' }}>
+          <h2>Global AI Power Switch</h2>
+          <p className="help-text">Turn the AI completely on or off. If turned off, the AI will ignore all incoming messages, giving you 100% manual control over the platform.</p>
+          
+          <div style={{ display: 'flex', gap: '24px', marginTop: '16px', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ flex: 1, minWidth: '250px', padding: '16px', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ margin: 0 }}>LINE AI Status</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    className={`btn ${aiStatusLine ? 'btn-primary' : 'btn-outline'}`}
+                    style={aiStatusLine ? { backgroundColor: '#10b981', borderColor: '#10b981' } : {}}
+                    onClick={() => {
+                      setAiStatusLine(true);
+                      handleSave('ai_status_line', 'true');
+                    }}
+                    disabled={savingKey === 'ai_status_line'}
+                  >
+                    ON
+                  </button>
+                  <button 
+                    className={`btn ${!aiStatusLine ? 'btn-primary' : 'btn-outline'}`}
+                    style={!aiStatusLine ? { backgroundColor: '#ef4444', borderColor: '#ef4444' } : {}}
+                    onClick={() => {
+                      setAiStatusLine(false);
+                      handleSave('ai_status_line', 'false');
+                    }}
+                    disabled={savingKey === 'ai_status_line'}
+                  >
+                    OFF
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="form-group" style={{ flex: 1, minWidth: '250px', padding: '16px', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ margin: 0 }}>Facebook AI Status</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    className={`btn ${aiStatusFb ? 'btn-primary' : 'btn-outline'}`}
+                    style={aiStatusFb ? { backgroundColor: '#10b981', borderColor: '#10b981' } : {}}
+                    onClick={() => {
+                      setAiStatusFb(true);
+                      handleSave('ai_status_fb', 'true');
+                    }}
+                    disabled={savingKey === 'ai_status_fb'}
+                  >
+                    ON
+                  </button>
+                  <button 
+                    className={`btn ${!aiStatusFb ? 'btn-primary' : 'btn-outline'}`}
+                    style={!aiStatusFb ? { backgroundColor: '#ef4444', borderColor: '#ef4444' } : {}}
+                    onClick={() => {
+                      setAiStatusFb(false);
+                      handleSave('ai_status_fb', 'false');
+                    }}
+                    disabled={savingKey === 'ai_status_fb'}
+                  >
+                    OFF
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* General Settings */}
         <section className="settings-card">
           <h2>General Info</h2>
