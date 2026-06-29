@@ -35,6 +35,12 @@ export async function getSystemSetting<T>(key: string, defaultValue: T): Promise
     if (typeof defaultValue === 'string' && data.value === '') {
       return defaultValue;
     }
+    
+    // Handle cases where a boolean was accidentally stored as a string "true" or "false"
+    if (typeof defaultValue === 'boolean' && typeof data.value === 'string') {
+      if (data.value === 'false') return false as unknown as T;
+      if (data.value === 'true') return true as unknown as T;
+    }
 
     return data.value as T;
   } catch (err) {

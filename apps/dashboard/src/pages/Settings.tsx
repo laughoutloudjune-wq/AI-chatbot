@@ -133,7 +133,7 @@ export default function SettingsPage() {
                     style={aiStatusLine ? { backgroundColor: '#10b981', borderColor: '#10b981' } : {}}
                     onClick={() => {
                       setAiStatusLine(true);
-                      handleSave('ai_status_line', 'true');
+                      handleSave('ai_status_line', true);
                     }}
                     disabled={savingKey === 'ai_status_line'}
                   >
@@ -144,7 +144,7 @@ export default function SettingsPage() {
                     style={!aiStatusLine ? { backgroundColor: '#ef4444', borderColor: '#ef4444' } : {}}
                     onClick={() => {
                       setAiStatusLine(false);
-                      handleSave('ai_status_line', 'false');
+                      handleSave('ai_status_line', false);
                     }}
                     disabled={savingKey === 'ai_status_line'}
                   >
@@ -163,7 +163,7 @@ export default function SettingsPage() {
                     style={aiStatusFb ? { backgroundColor: '#10b981', borderColor: '#10b981' } : {}}
                     onClick={() => {
                       setAiStatusFb(true);
-                      handleSave('ai_status_fb', 'true');
+                      handleSave('ai_status_fb', true);
                     }}
                     disabled={savingKey === 'ai_status_fb'}
                   >
@@ -174,7 +174,7 @@ export default function SettingsPage() {
                     style={!aiStatusFb ? { backgroundColor: '#ef4444', borderColor: '#ef4444' } : {}}
                     onClick={() => {
                       setAiStatusFb(false);
-                      handleSave('ai_status_fb', 'false');
+                      handleSave('ai_status_fb', false);
                     }}
                     disabled={savingKey === 'ai_status_fb'}
                   >
