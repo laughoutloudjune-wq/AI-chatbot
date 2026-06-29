@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, X, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, X, AlertCircle, Trash2 } from 'lucide-react';
 import { supabase } from '../supabase';
 
 export default function ServicesPage() {
@@ -41,6 +41,25 @@ export default function ServicesPage() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete the service "${name}"?`)) {
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('clinic_services')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      setServices(services.filter(s => s.id !== id));
+    } catch (err: any) {
+      alert(`Error deleting service: ${err.message}`);
     }
   };
 
@@ -156,9 +175,14 @@ export default function ServicesPage() {
                       </span>
                     </td>
                     <td>
-                      <button className="btn btn-outline" style={{ padding: '6px 12px' }} onClick={() => openModal(s)}>
-                        <Edit2 size={14} /> Edit
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-outline" style={{ padding: '6px 12px' }} onClick={() => openModal(s)}>
+                          <Edit2 size={14} /> Edit
+                        </button>
+                        <button className="btn btn-outline" style={{ padding: '6px 12px', borderColor: '#fca5a5', color: '#ef4444' }} onClick={() => handleDelete(s.id, s.name)}>
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

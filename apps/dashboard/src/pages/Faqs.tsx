@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, X, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, X, AlertCircle, Trash2 } from 'lucide-react';
 import { supabase } from '../supabase';
 
 export default function FaqsPage() {
@@ -38,6 +38,25 @@ export default function FaqsPage() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string, topic: string) => {
+    if (!window.confirm(`Are you sure you want to delete the FAQ for "${topic}"?`)) {
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('clinic_faqs')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      setFaqs(faqs.filter(f => f.id !== id));
+    } catch (err: any) {
+      alert(`Error deleting FAQ: ${err.message}`);
     }
   };
 
@@ -170,9 +189,14 @@ export default function FaqsPage() {
                       </span>
                     </td>
                     <td>
-                      <button className="btn btn-outline" style={{ padding: '6px 12px' }} onClick={() => openModal(f)}>
-                        <Edit2 size={14} /> Edit
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-outline" style={{ padding: '6px 12px' }} onClick={() => openModal(f)}>
+                          <Edit2 size={14} /> Edit
+                        </button>
+                        <button className="btn btn-outline" style={{ padding: '6px 12px', borderColor: '#fca5a5', color: '#ef4444' }} onClick={() => handleDelete(f.id, f.topic)}>
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
