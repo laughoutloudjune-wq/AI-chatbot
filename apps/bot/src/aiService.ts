@@ -4,7 +4,16 @@ import { supabaseAdmin, getSystemSetting } from './supabase';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
+// clinic_services/clinic_faqs แทบไม่เปลี่ยนระหว่างข้อความแชท จึง cache สตริงที่ประกอบแล้วไว้
+// เพื่อลดการ query ตารางทั้งสองซ้ำทุกครั้งที่มีข้อความเข้ามา
+const KNOWLEDGE_BASE_CACHE_TTL_MS = 3 * 60 * 1000; // 3 นาที
+let knowledgeBaseCache: { value: string; expiresAt: number } | null = null;
+
 async function getKnowledgeBaseContext(): Promise<string> {
+  if (knowledgeBaseCache && knowledgeBaseCache.expiresAt > Date.now()) {
+    return knowledgeBaseCache.value;
+  }
+
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return 'ไม่มีข้อมูลคลังความรู้เพิ่มเติม (Database not connected)';
   }
@@ -56,11 +65,18 @@ async function getKnowledgeBaseContext(): Promise<string> {
       contextStr += 'ไม่มีข้อมูล FAQs\n';
     }
 
+    knowledgeBaseCache = { value: contextStr, expiresAt: Date.now() + KNOWLEDGE_BASE_CACHE_TTL_MS };
     return contextStr;
   } catch (error) {
     console.error('[Supabase] Error fetching knowledge base:', error);
     return 'เกิดข้อผิดพลาดในการดึงข้อมูลคลังความรู้';
   }
+}
+
+// เรียกจากฝั่ง admin dashboard (หรือ webhook) หลังแก้ไข clinic_services/clinic_faqs
+// เพื่อให้บอทดึงข้อมูลล่าสุดในข้อความถัดไปทันที แทนที่จะรอ TTL หมดอายุ
+export function clearKnowledgeBaseCache(): void {
+  knowledgeBaseCache = null;
 }
 
 export async function getReplyFromAI(messages: {role: 'user' | 'assistant', content: string}[]): Promise<string> {
