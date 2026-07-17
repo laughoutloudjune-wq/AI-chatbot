@@ -3,6 +3,7 @@ import { supabaseAdmin, getSystemSetting } from './supabase';
 import { getReplyFromAI } from './aiService';
 import { notifyAdmin } from './lineHandler';
 import { logSystem } from './logger';
+import { scheduleDebounced } from './debounce';
 
 export async function handleFbVerify(req: Request, res: Response) {
   const verify_token = await getSystemSetting<string>('fb_verify_token', process.env.FB_VERIFY_TOKEN || '');
@@ -272,35 +273,7 @@ export async function handleFbEvent(req: Request, res: Response) {
           return;
         }
 
-        // 3. AI Reply
-        const replyText = await getReplyFromAI(chatHistory);
-
-        chatHistory.push({ role: 'assistant', content: replyText });
-
-        // 4. Save Session (We don't save here yet, we save after handoff detection to capture is_paused properly!)
-        
-        // 5. Image Parsing & Reply
-        const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
-        let imageUrl: string | undefined = undefined;
-        const matches = [...replyText.matchAll(imageRegex)];
-        if (matches.length > 0) {
-          imageUrl = matches[0][1];
-        }
-        
-        let cleanReplyText = replyText.replace(imageRegex, '').trim();
-        let isHandoff = false;
-
-        // Detect if AI decided to handoff
-        if (cleanReplyText.toUpperCase().includes('[HANDOFF]')) {
-          isHandoff = true;
-          cleanReplyText = cleanReplyText.replace(/\[HANDOFF\]/gi, '').trim();
-        }
-
-        if (isHandoff) {
-          await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ช่องทาง: Facebook\nชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
-        }
-        
-        // Save Session
+        // บันทึกข้อความของลูกค้าไว้ทันที ให้ Live Chats เห็นข้อความก่อนบอทจะตอบ
         try {
           await supabaseAdmin.from('chat_sessions').upsert({
             user_id: fbUserId,
@@ -308,14 +281,68 @@ export async function handleFbEvent(req: Request, res: Response) {
             last_message: userMessage,
             history: chatHistory,
             last_interaction_at: new Date().toISOString(),
-            is_paused: isHandoff,
+            is_paused: false,
             follow_up_sent: false
           });
         } catch (err: any) {
           logSystem('error', 'FB', `Error saving chat session: ${err.message}`);
         }
-        
-        await sendFbMessage(senderId, cleanReplyText, imageUrl);
+
+        // 3. AI Reply -- หน่วงเวลาไว้เล็กน้อยก่อนตอบ เผื่อลูกค้าพิมพ์หลายข้อความติดกัน
+        // จะได้รวมเป็นบริบทเดียวก่อนเรียก AI แทนที่จะตอบทีละข้อความแยกกันจนหลุดประเด็น
+        const debounceSeconds = await getSystemSetting<number>('ai_reply_debounce_seconds', 6);
+        scheduleDebounced(fbUserId, debounceSeconds * 1000, async () => {
+          // ดึงประวัติล่าสุดจาก DB อีกครั้ง เผื่อมีข้อความอื่นของลูกค้าคนนี้แทรกเข้ามาระหว่างที่รออยู่
+          let latestHistory = chatHistory;
+          try {
+            const { data } = await supabaseAdmin.from('chat_sessions').select('history').eq('user_id', fbUserId).single();
+            if (data?.history) latestHistory = data.history;
+          } catch (err) {
+            // Ignored, fall back to locally captured history
+          }
+
+          const replyText = await getReplyFromAI(latestHistory);
+
+          latestHistory.push({ role: 'assistant', content: replyText });
+
+          // Image Parsing & Reply
+          const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
+          let imageUrl: string | undefined = undefined;
+          const matches = [...replyText.matchAll(imageRegex)];
+          if (matches.length > 0) {
+            imageUrl = matches[0][1];
+          }
+
+          let cleanReplyText = replyText.replace(imageRegex, '').trim();
+          let isHandoff = false;
+
+          // Detect if AI decided to handoff
+          if (cleanReplyText.toUpperCase().includes('[HANDOFF]')) {
+            isHandoff = true;
+            cleanReplyText = cleanReplyText.replace(/\[HANDOFF\]/gi, '').trim();
+          }
+
+          if (isHandoff) {
+            await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ช่องทาง: Facebook\nชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
+          }
+
+          // Save Session
+          try {
+            await supabaseAdmin.from('chat_sessions').upsert({
+              user_id: fbUserId,
+              customer_name: customerName,
+              last_message: userMessage,
+              history: latestHistory,
+              last_interaction_at: new Date().toISOString(),
+              is_paused: isHandoff,
+              follow_up_sent: false
+            });
+          } catch (err: any) {
+            logSystem('error', 'FB', `Error saving chat session: ${err.message}`);
+          }
+
+          await sendFbMessage(senderId, cleanReplyText, imageUrl);
+        });
       }
     });
   });

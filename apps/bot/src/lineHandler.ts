@@ -2,6 +2,7 @@ import { supabaseAdmin, getSystemSetting } from './supabase';
 import { WebhookEvent, MessageEvent, TextEventMessage, messagingApi } from '@line/bot-sdk';
 import { getReplyFromAI } from './aiService';
 import { logSystem } from './logger';
+import { scheduleDebounced } from './debounce';
 
 const lineClient = new messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
@@ -187,39 +188,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
 
   logSystem('info', 'LINE', `Received text message: "${userMessage}"`);
 
-  // 4. ส่งประวัติทั้งหมดไปให้ Gemini พร้อม system prompt
-  const replyText = await getReplyFromAI(chatHistory);
-
-  // เพิ่มข้อความที่ Claude ตอบกลับไปในประวัติ
-  chatHistory.push({ role: 'assistant', content: replyText });
-
-
-
-  // Parse [IMAGE: url] จากคำตอบของ AI
-  const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
-  const matches = [...replyText.matchAll(imageRegex)];
-  const imageUrls: string[] = [];
-  
-  for (const match of matches) {
-    if (imageUrls.length < 4) { // LINE allows max 5 bubbles per reply (1 text + up to 4 images)
-      imageUrls.push(match[1]);
-    }
-  }
-  let cleanReplyText = replyText.replace(imageRegex, '').trim();
-  let isHandoff = false;
-
-  // Detect if AI decided to handoff
-  if (cleanReplyText.toUpperCase().includes('[HANDOFF]')) {
-    isHandoff = true;
-    cleanReplyText = cleanReplyText.replace(/\[HANDOFF\]/gi, '').trim();
-  }
-
-  if (isHandoff) {
-    const customerName = await getCustomerName(userId);
-    await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ชื่อลูกค้า: ${customerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
-  }
-
-  // บันทึกกลับลง Database
+  // บันทึกข้อความของลูกค้าไว้ทันที ให้ Live Chats เห็นข้อความก่อนบอทจะตอบ
   if (userId) {
     try {
       await supabaseAdmin.from('chat_sessions').upsert({
@@ -228,7 +197,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
         last_message: userMessage,
         history: chatHistory,
         last_interaction_at: new Date().toISOString(),
-        is_paused: isHandoff,
+        is_paused: false,
         follow_up_sent: false
       });
     } catch (err: any) {
@@ -236,27 +205,97 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     }
   }
 
-  // 5. Reply กลับหา user ด้วย LINE reply token
-  try {
-    logSystem('info', 'LINE', `Sending reply to user...`);
-    const messagesToSend: any[] = [{ type: 'text', text: cleanReplyText }];
-    
-    if (imageUrls.length > 0) {
-      imageUrls.forEach(url => {
-        messagesToSend.push({
-          type: 'image',
-          originalContentUrl: url,
-          previewImageUrl: url
-        });
-      });
+  const runAiReply = async () => {
+    // ดึงประวัติล่าสุดจาก DB อีกครั้ง เผื่อมีข้อความอื่นของลูกค้าคนนี้แทรกเข้ามาระหว่างที่รออยู่
+    let latestHistory = chatHistory;
+    if (userId) {
+      try {
+        const { data } = await supabaseAdmin.from('chat_sessions').select('history').eq('user_id', userId).single();
+        if (data?.history) latestHistory = data.history;
+      } catch (err) {
+        // Ignored, fall back to locally captured history
+      }
     }
 
-    await lineClient.replyMessage({
-      replyToken: replyToken,
-      messages: messagesToSend,
-    });
-    logSystem('info', 'LINE', `Reply sent successfully.`);
-  } catch (error: any) {
-    logSystem('error', 'LINE', `Error sending reply: ${error.message}`);
+    // 4. ส่งประวัติทั้งหมดไปให้ Gemini พร้อม system prompt
+    const replyText = await getReplyFromAI(latestHistory);
+
+    // เพิ่มข้อความที่ AI ตอบกลับไปในประวัติ
+    latestHistory.push({ role: 'assistant', content: replyText });
+
+    // Parse [IMAGE: url] จากคำตอบของ AI
+    const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
+    const matches = [...replyText.matchAll(imageRegex)];
+    const imageUrls: string[] = [];
+
+    for (const match of matches) {
+      if (imageUrls.length < 4) { // LINE allows max 5 bubbles per reply (1 text + up to 4 images)
+        imageUrls.push(match[1]);
+      }
+    }
+    let cleanReplyText = replyText.replace(imageRegex, '').trim();
+    let isHandoff = false;
+
+    // Detect if AI decided to handoff
+    if (cleanReplyText.toUpperCase().includes('[HANDOFF]')) {
+      isHandoff = true;
+      cleanReplyText = cleanReplyText.replace(/\[HANDOFF\]/gi, '').trim();
+    }
+
+    if (isHandoff) {
+      const handoffCustomerName = await getCustomerName(userId);
+      await notifyAdmin('AI ตัดสินใจโอนสาย (Handoff)', `ชื่อลูกค้า: ${handoffCustomerName}\nข้อความล่าสุด: "${userMessage}"\n(AI ประเมินว่าเคสนี้ต้องการคนดูแล)`);
+    }
+
+    // บันทึกกลับลง Database
+    if (userId) {
+      try {
+        await supabaseAdmin.from('chat_sessions').upsert({
+          user_id: userId,
+          customer_name: customerName,
+          last_message: userMessage,
+          history: latestHistory,
+          last_interaction_at: new Date().toISOString(),
+          is_paused: isHandoff,
+          follow_up_sent: false
+        });
+      } catch (err: any) {
+        logSystem('error', 'LINE', `Error saving chat session: ${err.message}`);
+      }
+    }
+
+    // 5. Reply กลับหา user ด้วย LINE reply token
+    try {
+      logSystem('info', 'LINE', `Sending reply to user...`);
+      const messagesToSend: any[] = [{ type: 'text', text: cleanReplyText }];
+
+      if (imageUrls.length > 0) {
+        imageUrls.forEach(url => {
+          messagesToSend.push({
+            type: 'image',
+            originalContentUrl: url,
+            previewImageUrl: url
+          });
+        });
+      }
+
+      await lineClient.replyMessage({
+        replyToken: replyToken,
+        messages: messagesToSend,
+      });
+      logSystem('info', 'LINE', `Reply sent successfully.`);
+    } catch (error: any) {
+      logSystem('error', 'LINE', `Error sending reply: ${error.message}`);
+    }
+  };
+
+  // หน่วงเวลาไว้เล็กน้อยก่อนตอบ เผื่อลูกค้าพิมพ์หลายข้อความติดกัน จะได้รวมเป็นบริบทเดียว
+  // ก่อนเรียก AI แทนที่จะตอบทีละข้อความแยกกันจนหลุดประเด็น
+  if (userId) {
+    const debounceSeconds = await getSystemSetting<number>('ai_reply_debounce_seconds', 6);
+    scheduleDebounced(userId, debounceSeconds * 1000, runAiReply);
+  } else {
+    // ไม่มี userId ที่ใช้เป็นคีย์ได้ (เช่น group/room) ให้ตอบทันทีตามพฤติกรรมเดิม
+    await runAiReply();
   }
 }
