@@ -194,7 +194,7 @@ export async function getReplyFromAI(messages: {role: 'user' | 'assistant', cont
         generationConfig: {
           // บังคับความสั้นระดับ API ไม่พึ่งแค่คำสั่งใน prompt เพราะโมเดล lite
           // มักไม่ทำตามกฎความยาวได้แม่นยำนักเมื่อ context ยาว
-          maxOutputTokens: 300,
+          maxOutputTokens: 150,
           temperature: 0.6
         }
     });
