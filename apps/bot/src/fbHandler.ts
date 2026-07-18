@@ -342,15 +342,11 @@ export async function handleFbEvent(req: Request, res: Response) {
             logSystem('error', 'FB', `Error saving chat session: ${err.message}`);
           }
 
-          // แบ่งข้อความยาวเป็นหลาย bubble สั้นๆ และทยอยส่งเหมือนคนพิมพ์ทีละข้อความ
-          const bubbles = splitIntoBubbles(cleanReplyText);
-          for (let i = 0; i < bubbles.length; i++) {
-            const isLast = i === bubbles.length - 1;
-            await sendFbMessage(senderId, bubbles[i], isLast ? imageUrl : undefined);
-            if (!isLast) {
-              await new Promise((resolve) => setTimeout(resolve, 900 + Math.random() * 700));
-            }
-          }
+          // บังคับความยาวต่อย่อหน้าไม่ให้ยาวเกินไป (เผื่อโมเดลไม่ทำตามกฎ) แล้วส่งเป็นข้อความเดียว
+          // ไม่แยกส่งหลายข้อความ เพราะทำให้ลูกค้าได้รับการแจ้งเตือนถี่เกินไปและเรียงลำดับกับ
+          // ข้อความใหม่ของลูกค้าที่อาจแทรกเข้ามาระหว่างนั้นได้ยาก
+          const finalText = splitIntoBubbles(cleanReplyText).join('\n\n');
+          await sendFbMessage(senderId, finalText, imageUrl);
         });
       }
     });

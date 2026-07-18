@@ -263,14 +263,13 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     try {
       logSystem('info', 'LINE', `Sending reply to user...`);
 
-      // แบ่งข้อความยาวเป็นหลาย bubble สั้นๆ ให้ดูเหมือนคนพิมพ์ทีละข้อความ
-      // LINE ส่งได้สูงสุด 5 ข้อความต่อการ reply หนึ่งครั้ง (ข้อความ + รูปภาพรวมกัน)
-      const bubbles = splitIntoBubbles(cleanReplyText);
-      const textSlots = Math.min(bubbles.length, 5);
-      const imageSlots = Math.max(0, 5 - textSlots);
-      const imageUrls = allImageUrls.slice(0, imageSlots);
+      // บังคับความยาวต่อย่อหน้าไม่ให้ยาวเกินไป (เผื่อโมเดลไม่ทำตามกฎ) แล้วส่งเป็นข้อความเดียว
+      // ไม่แยกส่งหลายข้อความ เพราะ LINE รวมข้อความในการ reply ครั้งเดียวอยู่แล้ว (ไม่ได้ช่วยให้
+      // ดูเหมือนพิมพ์จริง) และทำให้ลูกค้าได้รับการแจ้งเตือนถี่เกินความจำเป็น
+      const finalText = splitIntoBubbles(cleanReplyText).join('\n\n');
+      const imageUrls = allImageUrls.slice(0, 4); // LINE allows max 5 bubbles per reply (1 text + up to 4 images)
 
-      const messagesToSend: any[] = bubbles.slice(0, textSlots).map((bubble) => ({ type: 'text', text: bubble }));
+      const messagesToSend: any[] = [{ type: 'text', text: finalText }];
 
       if (imageUrls.length > 0) {
         imageUrls.forEach(url => {
