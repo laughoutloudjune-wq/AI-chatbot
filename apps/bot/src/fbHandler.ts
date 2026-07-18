@@ -4,6 +4,7 @@ import { getReplyFromAI } from './aiService';
 import { notifyAdmin } from './lineHandler';
 import { logSystem } from './logger';
 import { scheduleDebounced } from './debounce';
+import { splitIntoBubbles } from './messageSplitter';
 
 export async function handleFbVerify(req: Request, res: Response) {
   const verify_token = await getSystemSetting<string>('fb_verify_token', process.env.FB_VERIFY_TOKEN || '');
@@ -341,7 +342,15 @@ export async function handleFbEvent(req: Request, res: Response) {
             logSystem('error', 'FB', `Error saving chat session: ${err.message}`);
           }
 
-          await sendFbMessage(senderId, cleanReplyText, imageUrl);
+          // แบ่งข้อความยาวเป็นหลาย bubble สั้นๆ และทยอยส่งเหมือนคนพิมพ์ทีละข้อความ
+          const bubbles = splitIntoBubbles(cleanReplyText);
+          for (let i = 0; i < bubbles.length; i++) {
+            const isLast = i === bubbles.length - 1;
+            await sendFbMessage(senderId, bubbles[i], isLast ? imageUrl : undefined);
+            if (!isLast) {
+              await new Promise((resolve) => setTimeout(resolve, 900 + Math.random() * 700));
+            }
+          }
         });
       }
     });

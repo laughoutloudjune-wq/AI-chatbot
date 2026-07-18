@@ -3,6 +3,7 @@ import { WebhookEvent, MessageEvent, TextEventMessage, messagingApi } from '@lin
 import { getReplyFromAI } from './aiService';
 import { logSystem } from './logger';
 import { scheduleDebounced } from './debounce';
+import { splitIntoBubbles } from './messageSplitter';
 
 const lineClient = new messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
@@ -226,13 +227,7 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     // Parse [IMAGE: url] จากคำตอบของ AI
     const imageRegex = /\[IMAGE:\s*(https?:\/\/[^\]]+)\]/g;
     const matches = [...replyText.matchAll(imageRegex)];
-    const imageUrls: string[] = [];
-
-    for (const match of matches) {
-      if (imageUrls.length < 4) { // LINE allows max 5 bubbles per reply (1 text + up to 4 images)
-        imageUrls.push(match[1]);
-      }
-    }
+    const allImageUrls = matches.map((match) => match[1]);
     let cleanReplyText = replyText.replace(imageRegex, '').trim();
     let isHandoff = false;
 
@@ -267,7 +262,15 @@ export async function handleLineEvent(event: WebhookEvent): Promise<void> {
     // 5. Reply กลับหา user ด้วย LINE reply token
     try {
       logSystem('info', 'LINE', `Sending reply to user...`);
-      const messagesToSend: any[] = [{ type: 'text', text: cleanReplyText }];
+
+      // แบ่งข้อความยาวเป็นหลาย bubble สั้นๆ ให้ดูเหมือนคนพิมพ์ทีละข้อความ
+      // LINE ส่งได้สูงสุด 5 ข้อความต่อการ reply หนึ่งครั้ง (ข้อความ + รูปภาพรวมกัน)
+      const bubbles = splitIntoBubbles(cleanReplyText);
+      const textSlots = Math.min(bubbles.length, 5);
+      const imageSlots = Math.max(0, 5 - textSlots);
+      const imageUrls = allImageUrls.slice(0, imageSlots);
+
+      const messagesToSend: any[] = bubbles.slice(0, textSlots).map((bubble) => ({ type: 'text', text: bubble }));
 
       if (imageUrls.length > 0) {
         imageUrls.forEach(url => {
