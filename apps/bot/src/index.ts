@@ -3,12 +3,17 @@ import express, { Request, Response, NextFunction } from 'express';
 import { middleware, WebhookEvent } from '@line/bot-sdk';
 import { handleLineEvent } from './lineHandler';
 import { startCronJobs } from './cron/followUpCron';
+import { startKnowledgeBaseCacheInvalidation } from './cacheInvalidation';
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Start background cron jobs
 startCronJobs();
+
+// ฟัง Realtime การเปลี่ยนแปลงของคลังความรู้/system_settings เพื่อล้าง cache ทันที
+// แทนที่จะรอ TTL หมดอายุเอง (ดู apps/bot/src/cacheInvalidation.ts)
+startKnowledgeBaseCacheInvalidation();
 
 // LINE configuration
 const lineConfig = {

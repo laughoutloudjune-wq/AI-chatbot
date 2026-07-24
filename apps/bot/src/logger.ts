@@ -1,6 +1,6 @@
 import { supabaseAdmin } from './supabase';
 
-export async function logSystem(level: 'info' | 'error' | 'warn', source: 'LINE' | 'FB' | 'AI' | 'System', message: string) {
+export async function logSystem(level: 'info' | 'error' | 'warn', source: 'LINE' | 'FB' | 'AI' | 'System' | 'Cache', message: string) {
   // Always log to console for standard Render server logs
   if (level === 'error') {
     console.error(`[${source}] ${message}`);
