@@ -232,10 +232,16 @@ export async function getReplyFromAI(messages: {role: 'user' | 'assistant', cont
 
     // แปลงรหัสรูปภาพสั้นๆ ที่ AI ใส่มา (เช่น [IMAGE:2]) กลับเป็น URL จริง
     // ทำหลัง AI ตอบมาแล้วเพื่อไม่ให้ URL เต็มๆ ไปกิน token budget ตอนสร้างคำตอบ
-    return rawReply.replace(/\[IMAGE:\s*(\d+)\s*\]/g, (match, id) => {
+    let finalReply = rawReply.replace(/\[IMAGE:\s*(\d+)\s*\]/g, (match, id) => {
       const url = imageMap[id];
       return url ? `[IMAGE: ${url}]` : '';
     });
+
+    // เผื่อ maxOutputTokens ตัดคำตอบขาดกลางแท็ก (เช่นเหลือ "[IMAGE:1" ค้างท้ายข้อความ
+    // โดยไม่มีวงเล็บปิด) ตัดเศษแท็กที่ไม่สมบูรณ์นี้ทิ้งก่อนส่งให้ลูกค้า ไม่ให้หลุดเป็นข้อความพัง
+    finalReply = finalReply.replace(/\[IMAGE:?[^\]]*$/i, '').trim();
+
+    return finalReply;
   } catch (error) {
     console.error(`[AI] Error communicating with Gemini:`, error);
     return 'ขออภัยค่ะ เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้งในภายหลังค่ะ';
