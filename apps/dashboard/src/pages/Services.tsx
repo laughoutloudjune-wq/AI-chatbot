@@ -6,7 +6,8 @@ export default function ServicesPage() {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
+  const [categoryFilter, setCategoryFilter] = useState('all');
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -148,6 +149,25 @@ export default function ServicesPage() {
         </div>
       )}
 
+      {!loading && services.length > 0 && (
+        <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label className="form-label" style={{ margin: 0 }}>Category:</label>
+          <select
+            className="form-input"
+            style={{ width: 'auto', minWidth: '200px' }}
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="all">All Categories ({services.length})</option>
+            {Array.from(new Set(services.map((s) => s.category))).sort().map((category) => (
+              <option key={category} value={category}>
+                {category} ({services.filter((s) => s.category === category).length})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0 }}>
         {loading ? (
           <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading services...</div>
@@ -164,7 +184,9 @@ export default function ServicesPage() {
                 </tr>
               </thead>
               <tbody>
-                {services.map((s) => (
+                {services
+                  .filter((s) => categoryFilter === 'all' || s.category === categoryFilter)
+                  .map((s) => (
                   <tr key={s.id}>
                     <td><span style={{ fontWeight: 500, color: 'var(--primary-dark)' }}>{s.category}</span></td>
                     <td>{s.name}</td>
