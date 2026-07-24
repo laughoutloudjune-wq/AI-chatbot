@@ -95,17 +95,17 @@ function isServiceRelevant(service: any, combinedUserText: string, relevantCateg
 async function buildKnowledgeBaseContext(
   messages: { role: 'user' | 'assistant', content: string }[],
   allowPrices: boolean
-): Promise<string> {
+): Promise<{ contextStr: string; imageMap: Record<string, string> }> {
   let data: { services: any[]; faqs: any[] } | null;
   try {
     data = await fetchKnowledgeBaseData();
   } catch (error) {
     console.error('[Supabase] Error fetching knowledge base:', error);
-    return 'เกิดข้อผิดพลาดในการดึงข้อมูลคลังความรู้';
+    return { contextStr: 'เกิดข้อผิดพลาดในการดึงข้อมูลคลังความรู้', imageMap: {} };
   }
 
   if (!data) {
-    return 'ไม่มีข้อมูลคลังความรู้เพิ่มเติม (Database not connected)';
+    return { contextStr: 'ไม่มีข้อมูลคลังความรู้เพิ่มเติม (Database not connected)', imageMap: {} };
   }
 
   const combinedUserText = messages.filter((m) => m.role === 'user').map((m) => m.content.toLowerCase()).join(' ');
@@ -117,6 +117,18 @@ async function buildKnowledgeBaseContext(
     : data.services.filter((s: any) => isServiceRelevant(s, combinedUserText, relevantCategories));
   const visibleServices = filteredServices.length > 0 ? filteredServices : data.services;
 
+  // แทนที่จะให้ AI พิมพ์ URL รูปภาพเต็มๆ ลงในคำตอบ (กิน token เยอะ เสี่ยงโดนตัดขาดตอนความยาว
+  // จำกัดแคบๆ จนแท็ก [IMAGE: ...] ขาดครึ่งและหลุดไปให้ลูกค้าเห็นเป็นข้อความพัง) ให้ AI ใช้รหัสสั้นๆ
+  // แทน เช่น [IMAGE:1] แล้วค่อยแปลงกลับเป็น URL จริงในโค้ดหลัง AI ตอบมาแล้ว (ดู getReplyFromAI)
+  const imageMap: Record<string, string> = {};
+  let imageCounter = 0;
+  const nextImageTag = (url: string): string => {
+    imageCounter += 1;
+    const id = String(imageCounter);
+    imageMap[id] = url;
+    return `[IMAGE:${id}]`;
+  };
+
   let contextStr = '--- ข้อมูลบริการของคลินิก (อ้างอิงราคาและบริการตามนี้เท่านั้น) ---\n';
 
   if (visibleServices.length > 0) {
@@ -126,7 +138,7 @@ async function buildKnowledgeBaseContext(
         : 'ลูกค้ายังไม่ได้ถามราคา (ห้ามบอกราคาจนกว่าจะถูกถามตรงๆ)';
       let line = `- หมวดหมู่: ${s.category} | บริการ: ${s.name} | จุดเด่น: ${s.description || '-'} | เหมาะกับ: ${s.target_audience || '-'} | ข้อควรระวัง: ${s.cautions || '-'} | ราคาเริ่มต้น: ${priceText}`;
       if (allowPrices && s.image_url) {
-        line += ` | รูปภาพแนบ: [IMAGE: ${s.image_url}]`;
+        line += ` | รูปภาพแนบ: ${nextImageTag(s.image_url)}`;
       }
       contextStr += line + '\n';
     });
@@ -148,7 +160,7 @@ async function buildKnowledgeBaseContext(
       let line = `Q: ${f.question}\nA: ${f.answer}\n`;
       if (allowPrices && f.image_urls && Array.isArray(f.image_urls)) {
         f.image_urls.forEach((url: string) => {
-          line += `รูปภาพแนบ: [IMAGE: ${url}]\n`;
+          line += `รูปภาพแนบ: ${nextImageTag(url)}\n`;
         });
       }
       contextStr += line + '\n';
@@ -161,7 +173,11 @@ async function buildKnowledgeBaseContext(
     contextStr += '\n(หมายเหตุ: ราคาถูกซ่อนไว้เพราะลูกค้ายังไม่ได้ถามเรื่องราคา/โปรโมชั่น หากลูกค้าถามราคาในข้อความนี้ ให้บอกว่าขอสอบถามเพิ่มเติมนิดนึงก่อนแนะนำราคาที่ตรงจุด แล้วรอให้ระบบส่งข้อมูลราคาให้ในข้อความถัดไป)\n';
   }
 
-  return contextStr;
+  if (Object.keys(imageMap).length > 0) {
+    contextStr += '\n(หมายเหตุ: [IMAGE:เลข] คือรหัสรูปภาพ ให้คัดลอกรหัสนี้ไปต่อท้ายคำตอบเป๊ะๆ ตามที่เห็น เช่น [IMAGE:2] ห้ามเปลี่ยนเป็น URL หรือแก้ไขตัวเลขเองเด็ดขาด)\n';
+  }
+
+  return { contextStr, imageMap };
 }
 
 // เรียกจากฝั่ง admin dashboard (หรือ webhook) หลังแก้ไข clinic_services/clinic_faqs
@@ -181,7 +197,7 @@ export async function getReplyFromAI(messages: {role: 'user' | 'assistant', cont
   // (กันไม่ให้ AI หยิบราคาที่เห็นในคลังความรู้มาบอกเองก่อนถูกถาม)
   console.log(`[AI] Fetching knowledge base from database...`);
   const allowPrices = containsPriceIntent(messages);
-  const knowledgeBase = await buildKnowledgeBaseContext(messages, allowPrices);
+  const { contextStr: knowledgeBase, imageMap } = await buildKnowledgeBaseContext(messages, allowPrices);
 
   const finalSystemPrompt = `${baseSystemPrompt}\n\n${knowledgeBase}`;
 
@@ -189,7 +205,7 @@ export async function getReplyFromAI(messages: {role: 'user' | 'assistant', cont
     console.log(`[AI] Sending message to Gemini...`);
 
     const model = genAI.getGenerativeModel({
-        model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
+        model: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
         systemInstruction: finalSystemPrompt,
         generationConfig: {
           // บังคับความสั้นระดับ API ไม่พึ่งแค่คำสั่งใน prompt เพราะโมเดล lite
@@ -212,7 +228,14 @@ export async function getReplyFromAI(messages: {role: 'user' | 'assistant', cont
     });
 
     console.log(`[AI] Received response from Gemini.`);
-    return response.response.text();
+    const rawReply = response.response.text();
+
+    // แปลงรหัสรูปภาพสั้นๆ ที่ AI ใส่มา (เช่น [IMAGE:2]) กลับเป็น URL จริง
+    // ทำหลัง AI ตอบมาแล้วเพื่อไม่ให้ URL เต็มๆ ไปกิน token budget ตอนสร้างคำตอบ
+    return rawReply.replace(/\[IMAGE:\s*(\d+)\s*\]/g, (match, id) => {
+      const url = imageMap[id];
+      return url ? `[IMAGE: ${url}]` : '';
+    });
   } catch (error) {
     console.error(`[AI] Error communicating with Gemini:`, error);
     return 'ขออภัยค่ะ เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้งในภายหลังค่ะ';
